@@ -1,0 +1,32 @@
+{% extends "layout.html" %}
+{% block content %}
+<h4 class="text-neon mb-3">TRANSACTION HISTORY</h4>
+{% if transactions %}
+    <div class="d-flex flex-column gap-2">
+        {% for t in transactions %}
+        <div class="card card-custom p-3 border-start border-4 {% if t.type == 'deposit' %}border-success{% else %}border-danger{% endif %}">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <h6 class="text-white mb-0 text-capitalize">{{ t.type }}</h6>
+                    <small class="text-muted">{{ t.time[:16] }}</small>
+                </div>
+                <div class="text-end">
+                    <h5 class="mb-0 {% if t.type == 'deposit' %}text-success{% else %}text-danger{% endif %}">
+                        {{ '+' if t.type == 'deposit' else '-' }} ৳ {{ t.amount }}
+                    </h5>
+                    {% if t.status == 'pending' %}
+                        <span class="badge bg-warning text-dark">Pending</span>
+                    {% elif t.status == 'approved' or t.status == 'paid' %}
+                        <span class="badge bg-success">Success</span>
+                    {% else %}
+                        <span class="badge bg-danger">Rejected</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <p class="text-muted text-center mt-5">No transactions yet.</p>
+{% endif %}
+{% endblock %}

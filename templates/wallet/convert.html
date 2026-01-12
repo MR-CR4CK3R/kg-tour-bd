@@ -1,0 +1,25 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="card card-custom p-4 text-center">
+    <h4 class="text-warning mb-4">CONVERT BALANCE</h4>
+    <div class="d-flex justify-content-center align-items-center mb-4">
+        <div class="text-success">
+            <h5>WINNING</h5>
+            <h3>৳ {{ user.winning_balance }}</h3>
+        </div>
+        <i class="fas fa-chevron-right mx-4 text-muted"></i>
+        <div class="text-info">
+            <h5>MAIN</h5>
+            <h3>৳ {{ user.main_balance }}</h3>
+        </div>
+    </div>
+    
+    <form method="POST">
+        <div class="mb-3">
+            <label class="form-label text-muted">Amount to Convert</label>
+            <input type="number" name="amount" class="form-control text-center" max="{{ user.winning_balance }}" required>
+        </div>
+        <button type="submit" class="btn btn-warning w-100 fw-bold">TRANSFER NOW</button>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="card card-custom p-4">
+    <h4 class="text-neon mb-3">ADD MONEY</h4>
+    
+    <div class="alert alert-secondary">
+        <strong>Bkash:</strong> <span class="text-white user-select-all">{{ settings.dep_bkash }}</span><br>
+        <strong>Nagad:</strong> <span class="text-white user-select-all">{{ settings.dep_nagad }}</span><br>
+        <small>Minimum Deposit: ৳ {{ settings.min_dep }}</small>
+    </div>
+
+    <form method="POST">
+        <div class="mb-3">
+            <label class="form-label text-muted">Payment Method</label>
+            <select name="method" class="form-select bg-dark text-white border-secondary">
+                <option value="Bkash">Bkash</option>
+                <option value="Nagad">Nagad</option>
+            </select>
+        </div>
+        <div class="mb-3">
+            <label class="form-label text-muted">Amount Sent</label>
+            <input type="number" name="amount" class="form-control" step="0.01" required>
+        </div>
+        <div class="mb-3">
+            <label class="form-label text-muted">Sender Number</label>
+            <input type="tel" name="sender" class="form-control" placeholder="01xxxxxxxxx" required>
+        </div>
+        <div class="mb-4">
+            <label class="form-label text-muted">Transaction ID (TrxID)</label>
+            <input type="text" name="trx_id" class="form-control" placeholder="e.g. 9H7..." required>
+        </div>
+        <button type="submit" class="btn btn-success w-100">SUBMIT DEPOSIT</button>
+    </form>
+</div>
+{% endblock %}
