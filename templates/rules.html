@@ -1,0 +1,16 @@
+{% extends "layout.html" %}
+{% block content %}
+<h3 class="text-center text-neon mb-4">TOURNAMENT RULES</h3>
+<div class="row g-3">
+    <div class="col-12">
+        <a href="{{ url_for('rules_detail', rtype='br') }}" class="btn btn-outline-light w-100 p-4 card-custom">
+            <h4 class="mb-0">BATTLE ROYALE RULES</h4>
+        </a>
+    </div>
+    <div class="col-12">
+        <a href="{{ url_for('rules_detail', rtype='cs') }}" class="btn btn-outline-light w-100 p-4 card-custom">
+            <h4 class="mb-0">CLASH SQUAD RULES</h4>
+        </a>
+    </div>
+</div>
+{% endblock %}

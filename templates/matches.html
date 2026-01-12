@@ -1,0 +1,24 @@
+{% extends "layout.html" %}
+{% block content %}
+<h3 class="text-neon mb-4 text-center">MATCH ZONE</h3>
+
+<div class="d-grid gap-3">
+    <a href="{{ url_for('matches_list', m_type='br') }}" class="card card-custom p-4 text-decoration-none text-white position-relative overflow-hidden">
+        <div class="position-absolute end-0 top-0 p-3 opacity-25"><i class="fas fa-skull fa-4x"></i></div>
+        <h4 class="mb-1">BATTLE ROYALE</h4>
+        <small class="text-info">Survival of the fittest</small>
+    </a>
+
+    <a href="{{ url_for('matches_list', m_type='cs') }}" class="card card-custom p-4 text-decoration-none text-white position-relative overflow-hidden">
+        <div class="position-absolute end-0 top-0 p-3 opacity-25"><i class="fas fa-crosshairs fa-4x"></i></div>
+        <h4 class="mb-1">CLASH SQUAD</h4>
+        <small class="text-warning">4v4 Tactical Combat</small>
+    </a>
+
+    <a href="{{ url_for('matches_list', m_type='joined') }}" class="card card-custom p-4 text-decoration-none text-white position-relative overflow-hidden" style="border-color: var(--neon-blue);">
+        <div class="position-absolute end-0 top-0 p-3 opacity-25"><i class="fas fa-check-circle fa-4x"></i></div>
+        <h4 class="mb-1 text-neon">MY MATCHES</h4>
+        <small class="text-light">Check joined matches</small>
+    </a>
+</div>
+{% endblock %}

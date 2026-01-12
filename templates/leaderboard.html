@@ -1,0 +1,26 @@
+{% extends "layout.html" %}
+{% block content %}
+<h3 class="text-warning text-center mb-4"><i class="fas fa-crown"></i> LEADERBOARD</h3>
+<div class="card card-custom p-0 overflow-hidden">
+    <table class="table table-dark table-hover mb-0">
+        <thead>
+            <tr class="text-neon">
+                <th scope="col" class="ps-4">Rank</th>
+                <th scope="col">Player</th>
+                <th scope="col" class="text-end pe-4">Winnings</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in top_users %}
+            <tr>
+                <td class="ps-4">
+                    {% if loop.index == 1 %}🥇{% elif loop.index == 2 %}🥈{% elif loop.index == 3 %}🥉{% else %}#{{ loop.index }}{% endif %}
+                </td>
+                <td>{{ u.name }}</td>
+                <td class="text-end pe-4 text-success">৳ {{ u.winning_balance }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

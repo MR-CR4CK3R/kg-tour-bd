@@ -1,0 +1,36 @@
+{% extends "layout.html" %}
+{% block content %}
+<h3 class="text-center text-neon mb-4">MY WALLET</h3>
+
+<div class="card card-custom p-4 mb-4 text-center">
+    <small class="text-muted">AVAILABLE FUNDS</small>
+    <h1 class="display-4 text-white">৳ {{ (user.main_balance + user.winning_balance) | int }}</h1>
+    <div class="row mt-2">
+        <div class="col-6"><span class="text-info">Main: {{ user.main_balance }}</span></div>
+        <div class="col-6"><span class="text-success">Win: {{ user.winning_balance }}</span></div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-6">
+        <a href="{{ url_for('deposit') }}" class="btn btn-outline-success w-100 p-3 card-custom">
+            <i class="fas fa-plus fa-2x mb-2"></i><br>Deposit
+        </a>
+    </div>
+    <div class="col-6">
+        <a href="{{ url_for('withdraw') }}" class="btn btn-outline-danger w-100 p-3 card-custom">
+            <i class="fas fa-arrow-down fa-2x mb-2"></i><br>Withdraw
+        </a>
+    </div>
+    <div class="col-6">
+        <a href="{{ url_for('convert') }}" class="btn btn-outline-warning w-100 p-3 card-custom">
+            <i class="fas fa-exchange-alt fa-2x mb-2"></i><br>Convert
+        </a>
+    </div>
+    <div class="col-6">
+        <a href="{{ url_for('transactions') }}" class="btn btn-outline-primary w-100 p-3 card-custom">
+            <i class="fas fa-history fa-2x mb-2"></i><br>History
+        </a>
+    </div>
+</div>
+{% endblock %}

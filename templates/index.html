@@ -1,0 +1,13 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="text-center d-flex flex-column justify-content-center" style="height: 80vh;">
+    <div class="mb-5">
+        <h1 class="display-3 text-neon fw-bold">KHELO<br>GAMERS</h1>
+        <p class="lead text-secondary mt-2">COMPETE | WIN | EARN</p>
+    </div>
+    <div class="d-grid gap-3">
+        <a href="{{ url_for('auth') }}" class="btn btn-neon btn-lg py-3">LOGIN / SIGNUP</a>
+        <a href="{{ url_for('support') }}" class="btn btn-outline-light btn-lg">SUPPORT</a>
+    </div>
+</div>
+{% endblock %}
