@@ -91,8 +91,16 @@
                     <label class="form-label text-white">Create Password</label>
                     <div class="input-group">
                         <span class="input-group-text bg-dark border-secondary text-light"><i class="fas fa-key"></i></span>
-                        <input type="password" name="password" class="form-control" placeholder="Set a new password" required>
+                        <input type="password" 
+                               name="password" 
+                               class="form-control" 
+                               placeholder="Set a new password" 
+                               minlength="6" 
+                               pattern="[^_*]+" 
+                               title="Password must be in 6 or longer characters and cannot contain '_' or '*'." 
+                               required>
                     </div>
+                    <small class="text-secondary" style="font-size: 0.8em;">Min 6 chars, no '_' or '*' allowed.</small>
                 </div>
                 
                 <button type="submit" class="btn btn-neon w-100 py-2">VERIFY & CREATE ACCOUNT</button>
