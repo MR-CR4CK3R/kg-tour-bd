@@ -1,0 +1,423 @@
+import os
+import uuid
+import datetime
+import requests
+import random
+import string
+import time
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, make_response
+import firebase_admin
+from firebase_admin import credentials, db
+from telebot import TeleBot
+
+# --- CONFIGURATION (SECURE ENV) ---
+app = Flask(__name__)
+# Secret Key এনভায়রনমেন্ট ভেরিয়েবল থেকে নেওয়া হবে
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "fallback_local_key") 
+
+# Telegram Config
+TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+OWNER_ID = int(os.environ.get("OWNER_ID", 7480892660))
+
+EMAIL_API_URL = "https://khelo-gamers.vercel.app/api/"
+FIREBASE_DB_URL = "https://khelo-gamers-of-bd-default-rtdb.asia-southeast1.firebasedatabase.app/"
+
+# Bot কানেকশন (সেফটি চেক সহ)
+if TOKEN:
+    bot = TeleBot(TOKEN)
+else:
+    print("Warning: Bot Token missing in Environment Variables")
+    bot = None
+
+# --- FIREBASE INITIALIZATION (SECURE) ---
+if not firebase_admin._apps:
+    try:
+        # প্রাইভেট কি লোড এবং নিউলাইন ফিক্স
+        private_key = os.environ.get("FIREBASE_PRIVATE_KEY")
+        if private_key:
+            private_key = private_key.replace('\\n', '\n')
+
+        svi = {
+            "type": "service_account",
+            "project_id": "khelo-gamers-of-bd",
+            "private_key_id": os.environ.get("FIREBASE_KEY_ID"),
+            "private_key": private_key,
+            "client_email": os.environ.get("FIREBASE_CLIENT_EMAIL"),
+            "client_id": "115627786098574748067",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40khelo-gamers-of-bd.iam.gserviceaccount.com",
+            "universe_domain": "googleapis.com"
+        }
+        
+        # ক্রেডেনশিয়াল ভেরিফাই করে অ্যাপ চালু
+        if private_key and os.environ.get("FIREBASE_CLIENT_EMAIL"):
+            cred = credentials.Certificate(svi)
+            firebase_admin.initialize_app(cred, {'databaseURL': FIREBASE_DB_URL})
+        else:
+            print("Error: Firebase credentials missing in Vercel Settings.")
+
+    except Exception as e:
+        print(f"Firebase Init Error: {e}")
+
+# --- HELPER FUNCTIONS ---
+def get_db(path):
+    try:
+        return db.reference(path).get()
+    except:
+        return None
+
+def is_logged_in():
+    return 'user_id' in session
+
+def current_user():
+    if not is_logged_in(): return None
+    users = get_db('users')
+    if not users: return None
+    return users.get(session['user_id'])
+
+def generate_otp():
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
+
+def send_email_otp(email, otp):
+    try:
+        headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+        response = requests.get(f"{EMAIL_API_URL}vmail?to={email}&otp={otp}", headers=headers, timeout=10)
+        return response.status_code == 200 and response.json().get("status") == "success"
+    except:
+        return False
+
+# --- ROUTES ---
+
+@app.route('/')
+def index():
+    if is_logged_in(): return redirect(url_for('dashboard'))
+    return render_template('index.html')
+
+@app.route('/dashboard')
+def dashboard():
+    if not is_logged_in(): return redirect(url_for('auth'))
+    user = current_user()
+    if not user:
+        session.clear()
+        return redirect(url_for('auth'))
+    return render_template('dashboard.html', user=user)
+
+@app.route('/auth', methods=['GET', 'POST'])
+def auth():
+    # --- 1. SETUP VARIABLES ---
+    if request.headers.getlist("X-Forwarded-For"):
+        user_ip = request.headers.getlist("X-Forwarded-For")[0]
+    else:
+        user_ip = request.remote_addr
+    
+    sanitized_ip = user_ip.replace('.', '_').replace(':', '_')
+
+    device_id = request.cookies.get('device_id')
+    if not device_id:
+        device_id = str(uuid.uuid4())
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+        
+        # --- LOGIN (No Device Check Needed) ---
+        if action == 'login':
+            login_id = request.form.get('login_id', '').strip()
+            password = request.form.get('password', '').strip()
+            users = get_db('users') or {}
+            
+            found_uid = None
+            for uid, u in users.items():
+                if (str(u.get('phone')) == login_id or u.get('email') == login_id) and u.get('password') == password:
+                    found_uid = uid
+                    break
+            
+            if found_uid:
+                if users[found_uid].get('is_banned'):
+                    flash("Account Banned.", "danger")
+                else:
+                    db.reference(f'users/{found_uid}/is_logged_in').set(True)
+                    session['user_id'] = found_uid
+                    
+                    resp = make_response(redirect(url_for('dashboard')))
+                    resp.set_cookie('device_id', device_id, max_age=315360000)
+                    return resp
+            else:
+                flash("Invalid ID or Password", "danger")
+
+        # --- SIGNUP STEP 1 (Device Check HERE) ---
+        elif action == 'signup_init':
+            if get_db(f'used_devices/{device_id}'):
+                flash("Device Policy: You already have an account on this device. Please Login.", "warning")
+                return render_template('auth.html', step='init')
+
+            existing_uid_on_ip = get_db(f'used_ips/{sanitized_ip}')
+            if existing_uid_on_ip:
+                flash("Registration blocked: Limit reached for this IP.", "danger")
+                return redirect(url_for('auth'))
+
+            name = request.form.get('name')
+            phone = request.form.get('phone', '').strip()
+            email = request.form.get('email', '').strip()
+            users = get_db('users') or {}
+            
+            for u in users.values():
+                if str(u.get('phone')) == phone or u.get('email') == email:
+                    flash("Phone or Email already registered.", "danger")
+                    return redirect(url_for('auth'))
+            
+            otp = generate_otp()
+            if send_email_otp(email, otp):
+                session['signup_data'] = {'name': name, 'phone': phone, 'email': email, 'otp': otp}
+                resp = make_response(render_template('auth.html', step='verify_otp'))
+                resp.set_cookie('device_id', device_id, max_age=315360000)
+                return resp
+            else:
+                flash("Failed to send OTP.", "danger")
+
+        # --- SIGNUP STEP 2 ---
+        elif action == 'verify_otp':
+            if get_db(f'used_devices/{device_id}'):
+                 flash("Error: Device already registered.", "danger")
+                 return redirect(url_for('auth'))
+
+            user_otp = request.form.get('otp', '').strip()
+            password = request.form.get('password')
+            data = session.get('signup_data')
+            
+            if data and str(data['otp']) == user_otp:
+                # Alphanumeric UID
+                new_uid = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
+                
+                new_user = {
+                    "userid": new_uid,
+                    "name": data.get('name', 'New User'),
+                    "phone": data['phone'],
+                    "email": data['email'],
+                    "password": password,
+                    "main_balance": 0.0,
+                    "winning_balance": 0.0,
+                    "role": "U",
+                    "joined_matches": [],
+                    "is_banned": False,
+                    "is_logged_in": True,
+                    "device_id": device_id,
+                    "signup_ip": user_ip
+                }
+                
+                db.reference(f'users/{new_uid}').set(new_user)
+                db.reference(f'used_devices/{device_id}').set(new_uid)
+                db.reference(f'used_ips/{sanitized_ip}').set(new_uid)
+                
+                session['user_id'] = new_uid
+                session.pop('signup_data', None)
+                
+                resp = make_response(redirect(url_for('dashboard')))
+                resp.set_cookie('device_id', device_id, max_age=315360000)
+                return resp
+            else:
+                flash("Invalid OTP", "danger")
+                return render_template('auth.html', step='verify_otp')
+
+    return render_template('auth.html', step='init')
+
+@app.route('/logout')
+def logout():
+    if is_logged_in():
+        uid = session['user_id']
+        db.reference(f'users/{uid}/is_logged_in').set(False)
+    session.clear()
+    return redirect(url_for('index'))
+
+@app.route('/matches')
+def matches_hub():
+    if not is_logged_in(): return redirect(url_for('auth'))
+    return render_template('matches.html')
+
+@app.route('/matches/<m_type>')
+def matches_list(m_type):
+    if not is_logged_in(): return redirect(url_for('auth'))
+    all_matches = get_db('matches') or {}
+    filtered = {}
+    user_id = session['user_id']
+    sorted_items = sorted(all_matches.items(), key=lambda x: x[1].get('time', ''), reverse=True)
+    for mid, m in sorted_items:
+        if m_type == 'joined':
+            joined_list = m.get('joined', [])
+            if isinstance(joined_list, dict): joined_list = list(joined_list.values())
+            if user_id in joined_list: filtered[mid] = m
+        elif m.get('type') == m_type.upper() and m.get('status') == 'upcoming': filtered[mid] = m
+    template_map = {'br': 'matches/brmatches.html', 'cs': 'matches/csmatches.html', 'joined': 'matches/myjoinedmatch.html'}
+    return render_template(template_map.get(m_type, 'matches.html'), matches=filtered)
+
+@app.route('/match/join/<mid>', methods=['GET', 'POST'])
+def join_match(mid):
+    if not is_logged_in(): return redirect(url_for('auth'))
+    user_id = session['user_id']
+    match = get_db(f'matches/{mid}')
+    user = get_db(f'users/{user_id}')
+    if not match or match['status'] != 'upcoming':
+        flash("Match unavailable.", "danger"); return redirect(url_for('matches_hub'))
+    joined_list = match.get('joined', [])
+    if isinstance(joined_list, dict): joined_list = list(joined_list.values())
+    if user_id in joined_list:
+        flash("Already joined.", "warning"); return redirect(url_for('matches_list', m_type='joined'))
+    
+    current_count = 0
+    participants = match.get('participants', [])
+    if isinstance(participants, list):
+        for p in participants: 
+            if p: current_count += len(p.get('players', []))
+    elif isinstance(participants, dict):
+        for p in participants.values(): 
+            if p: current_count += len(p.get('players', []))
+    slots_left = match['limit'] - current_count
+
+    if request.method == 'POST':
+        player_count = int(request.form.get('player_count'))
+        player_names = request.form.getlist('player_name[]')
+        player_uids = request.form.getlist('player_uid[]')
+        total_fee = match['fee'] * player_count
+        if user['main_balance'] < total_fee:
+            flash(f"Insufficient Balance.", "danger"); return redirect(url_for('join_match', mid=mid))
+        if player_count > slots_left:
+             flash("Not enough slots.", "danger"); return redirect(url_for('join_match', mid=mid))
+        
+        new_bal = user['main_balance'] - total_fee
+        db.reference(f'users/{user_id}/main_balance').set(new_bal)
+        if user_id not in joined_list:
+            joined_list.append(user_id)
+            db.reference(f'matches/{mid}/joined').set(joined_list)
+        u_joined = user.get('joined_matches', [])
+        if u_joined is None: u_joined = []
+        if isinstance(u_joined, dict): u_joined = list(u_joined.values())
+        if mid not in u_joined:
+            u_joined.append(mid)
+            db.reference(f'users/{user_id}/joined_matches').set(u_joined)
+        players_data = []
+        for i in range(player_count):
+            players_data.append({"game_uid": player_uids[i], "game_name": player_names[i], "added_by": user_id, "type": "fixed"})
+        new_participant = {"userid": user_id, "team_type": match.get('team_type', 'SOLO'), "players": players_data}
+        next_idx = len(participants) if participants else 0
+        db.reference(f'matches/{mid}/participants/{next_idx}').set(new_participant)
+        flash("Joined Successfully!", "success"); return redirect(url_for('matches_list', m_type='joined'))
+    return render_template('matches/joinmatch.html', match=match, slots=slots_left)
+
+@app.route('/wallet')
+def wallet(): return render_template('wallet.html', user=current_user())
+
+@app.route('/wallet/deposit', methods=['GET', 'POST'])
+def deposit():
+    if not is_logged_in(): return redirect(url_for('auth'))
+    settings = get_db('settings')
+    if request.method == 'POST':
+        method = request.form.get('method'); amount = float(request.form.get('amount')); sender = request.form.get('sender'); trx_id = request.form.get('trx_id')
+        txns = get_db('transactions') or {}
+        for t in txns.values():
+            if t.get('trx_id') == trx_id: flash("TrxID used.", "danger"); return redirect(url_for('deposit'))
+        tid = str(uuid.uuid4())[:8]
+        data = {"id": tid, "userid": session['user_id'], "type": "deposit", "method": method, "amount": amount, "sender": sender, "trx_id": trx_id, "status": "pending", "time": str(datetime.datetime.now())}
+        db.reference(f'transactions/{tid}').set(data)
+        flash("Deposit submitted.", "success"); return redirect(url_for('wallet'))
+    return render_template('wallet/deposit.html', settings=settings)
+
+@app.route('/wallet/withdraw', methods=['GET', 'POST'])
+def withdraw():
+    if not is_logged_in(): return redirect(url_for('auth'))
+    settings = get_db('settings')
+    user = current_user()
+    if request.method == 'POST':
+        method = request.form.get('method'); amount = float(request.form.get('amount')); number = request.form.get('number')
+        min_wd = float(settings.get('min_withdraw', 100))
+        if amount < min_wd: flash(f"Min withdraw {min_wd}", "danger")
+        elif user['winning_balance'] < amount: flash("Insufficient Winning Balance", "danger")
+        else:
+            new_bal = user['winning_balance'] - amount
+            db.reference(f'users/{session["user_id"]}/winning_balance').set(new_bal)
+            tid = str(uuid.uuid4())[:8]
+            data = {"id": tid, "userid": session['user_id'], "type": "withdraw", "method": method, "amount": amount, "number": number, "status": "pending", "time": str(datetime.datetime.now())}
+            db.reference(f'transactions/{tid}').set(data)
+            flash("Withdraw submitted.", "success"); return redirect(url_for('wallet'))
+    return render_template('wallet/withdraw.html', settings=settings, user=user)
+
+@app.route('/wallet/convert', methods=['GET', 'POST'])
+def convert():
+    if not is_logged_in(): return redirect(url_for('auth'))
+    user = current_user()
+    if request.method == 'POST':
+        amount = float(request.form.get('amount'))
+        if amount > 0 and user['winning_balance'] >= amount:
+            db.reference(f'users/{session["user_id"]}').update({'winning_balance': user['winning_balance'] - amount, 'main_balance': user['main_balance'] + amount})
+            flash("Converted!", "success"); return redirect(url_for('wallet'))
+        else: flash("Invalid amount.", "danger")
+    return render_template('wallet/convert.html', user=user)
+
+@app.route('/wallet/transactions')
+def transactions():
+    if not is_logged_in(): return redirect(url_for('auth'))
+    all_txns = get_db('transactions') or {}
+    uid = session['user_id']
+    my_txns = [t for t in all_txns.values() if str(t.get('userid')) == str(uid)]
+    my_txns.sort(key=lambda x: x['time'], reverse=True)
+    return render_template('wallet/mytransection.html', transactions=my_txns)
+
+@app.route('/profile')
+def profile(): return render_template('myprofile.html', user=current_user())
+
+@app.route('/profile/edit/<field>', methods=['GET', 'POST'])
+def edit_profile(field):
+    if not is_logged_in(): return redirect(url_for('auth'))
+    uid = session['user_id']
+    if request.method == 'POST':
+        value = request.form.get('value')
+        if field == 'password':
+            old_pass = request.form.get('old_password'); user = current_user()
+            if user['password'] != old_pass: flash("Wrong old password.", "danger"); return redirect(url_for('edit_profile', field=field))
+            db.reference(f'users/{uid}/password').set(value)
+        else: db.reference(f'users/{uid}/{field}').set(value)
+        flash("Updated.", "success"); return redirect(url_for('profile'))
+    template_map = {'name': 'myprofile/editname.html', 'email': 'myprofile/editemail.html', 'phone': 'myprofile/editphone.html', 'password': 'myprofile/editpassword.html'}
+    return render_template(template_map.get(field), user=current_user())
+
+@app.route('/upload_proof', methods=['GET', 'POST'])
+def upload_proof():
+    if not is_logged_in(): return redirect(url_for('auth'))
+    if request.method == 'POST':
+        mid = request.form.get('match_id'); rid = request.form.get('room_id'); file = request.files['proof_image']
+        if file and bot:
+            caption = f"📸 NEW WEB PROOF\nUser: {session['user_id']}\nMatch: {mid}\nRoom: {rid}"
+            try: bot.send_photo(OWNER_ID, file.read(), caption=caption); flash("Proof sent.", "success")
+            except Exception as e: flash(f"Error: {e}", "danger")
+        return redirect(url_for('dashboard'))
+    return render_template('uploadproof.html')
+
+@app.route('/uid_lookup')
+def uid_lookup():
+    uid = request.args.get('uid'); result = None
+    if uid:
+        try:
+            resp = requests.get(f"https://info-of-ff.vercel.app/info?uid={uid}&region=BD&key=TOC", timeout=5)
+            if resp.status_code == 200: result = resp.json().get('AccountInfo')
+        except: pass
+    return render_template('uidlookup.html', result=result, searched_uid=uid)
+
+@app.route('/leaderboard')
+def leaderboard():
+    users = get_db('users') or {}
+    sorted_users = sorted(users.values(), key=lambda u: u.get('winning_balance', 0), reverse=True)
+    return render_template('leaderboard.html', top_users=sorted_users[:10])
+
+@app.route('/rules')
+def rules_hub(): return render_template('rules.html')
+
+@app.route('/rules/<rtype>')
+def rules_detail(rtype):
+    rules_data = get_db('rules') or {}
+    return render_template(f'rules/{rtype}rules.html', content=rules_data.get(rtype.upper(), "No rules set."))
+
+@app.route('/support')
+def support(): return render_template('support.html')
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
