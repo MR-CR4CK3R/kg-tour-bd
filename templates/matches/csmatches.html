@@ -14,7 +14,7 @@
                 <span class="text-neon fw-bold">Entry: ৳ {{ m.fee }}</span>
             </div>
             <h5 class="card-title text-white">Map: {{ m.map }}</h5>
-            <div class="row text-muted small mb-3">
+            <div class="row text-white small mb-3">
                 <div class="col-6"><i class="fas fa-clock"></i> {{ m.time }}</div>
                 <div class="col-6 text-end"><i class="fas fa-users"></i> {{ m.limit }} Slots</div>
                 <div class="col-12 mt-1"><i class="fas fa-skull"></i> Per Kill: ৳ {{ m.per_kill }}</div>
@@ -31,7 +31,7 @@
     </div>
     {% endfor %}
 {% else %}
-    <div class="text-center mt-5 text-muted">
+    <div class="text-center mt-5 text-white">
         <i class="fas fa-gamepad fa-3x mb-3"></i>
         <p>No CS matches available right now.</p>
     </div>

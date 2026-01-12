@@ -13,11 +13,11 @@
                 <span class="badge {% if m.status == 'matching' %}bg-success{% elif m.status == 'completed' %}bg-secondary{% else %}bg-info{% endif %}">
                     {{ m.status | upper }}
                 </span>
-                <small class="text-muted">ID: {{ mid }}</small>
+                <small class="text-white">ID: {{ mid }}</small>
             </div>
             
             <h5 class="text-white">{{ m.type }} - {{ m.team_type }} ({{ m.map }})</h5>
-            <p class="small text-muted mb-3"><i class="fas fa-clock"></i> {{ m.time }}</p>
+            <p class="small text-white mb-3"><i class="fas fa-clock"></i> {{ m.time }}</p>
             
             <div class="bg-dark rounded p-2 mb-3 border border-secondary">
                 <h6 class="text-neon-p small mb-2"><i class="fas fa-users"></i> MY TEAM</h6>
@@ -37,7 +37,7 @@
                             {% for plr in p.players %}
                             <li class="d-flex justify-content-between border-bottom border-secondary py-1">
                                 <span>{{ plr.game_name }}</span>
-                                <span class="text-muted">{{ plr.game_uid }}</span>
+                                <span class="text-white">{{ plr.game_uid }}</span>
                             </li>
                             {% endfor %}
                             {% set ns.found = false %} {# লুপ ব্রেক করার জন্য #}
@@ -52,7 +52,7 @@
                     <div><strong>ID:</strong> <span class="user-select-all">{{ m.room_id }}</span></div>
                     <div><strong>PASS:</strong> <span class="user-select-all">{{ m.room_pass }}</span></div>
                 </div>
-                <small class="text-muted mt-1 text-center d-block">Click text to copy</small>
+                <small class="text-white mt-1 text-center d-block">Click text to copy</small>
             </div>
             {% else %}
             <div class="alert alert-secondary p-2 small mb-0 text-center">
@@ -63,7 +63,7 @@
     </div>
     {% endfor %}
 {% else %}
-    <div class="text-center mt-5 text-muted">
+    <div class="text-center mt-5 text-white">
         <i class="fas fa-ghost fa-3x mb-3"></i>
         <p>You haven't joined any matches yet.</p>
     </div>
