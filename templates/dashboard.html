@@ -2,7 +2,7 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4 mt-2">
     <div>
-        <small class="text-muted">Welcome back,</small>
+        <small class="text-white">Welcome back,</small>
         <h4 class="text-white mb-0">{{ user.name }}</h4>
     </div>
     <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline-danger"><i class="fas fa-sign-out-alt"></i></a>
@@ -10,7 +10,7 @@
 
 <div class="card card-custom p-3 mb-4 text-center position-relative overflow-hidden">
     <div style="position: absolute; top: -50px; right: -50px; width: 100px; height: 100px; background: var(--neon-blue); filter: blur(60px); opacity: 0.2;"></div>
-    <p class="text-muted mb-1 text-uppercase letter-spacing-1">Total Balance</p>
+    <p class="text-white mb-1 text-uppercase letter-spacing-1">Total Balance</p>
     <h1 class="text-white display-4 fw-bold">৳ {{ (user.main_balance + user.winning_balance) | int }}</h1>
     
     <div class="row mt-3 g-2">
@@ -30,7 +30,7 @@
     </div>
 </div>
 
-<h6 class="text-muted mb-3 text-uppercase">Quick Actions</h6>
+<h6 class="text-white mb-3 text-uppercase">Quick Actions</h6>
 <div class="row g-3">
     <div class="col-6">
         <a href="{{ url_for('matches_hub') }}" class="btn btn-outline-light w-100 p-3 card-custom text-start h-100">
