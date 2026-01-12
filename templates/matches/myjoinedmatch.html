@@ -1,0 +1,71 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="text-neon">MY MATCHES</h4>
+    <a href="{{ url_for('matches_hub') }}" class="btn btn-sm btn-outline-secondary">Back</a>
+</div>
+
+{% if matches %}
+    {% for mid, m in matches.items() %}
+    <div class="card card-custom mb-3 border-info">
+        <div class="card-body">
+            <div class="d-flex justify-content-between mb-2">
+                <span class="badge {% if m.status == 'matching' %}bg-success{% elif m.status == 'completed' %}bg-secondary{% else %}bg-info{% endif %}">
+                    {{ m.status | upper }}
+                </span>
+                <small class="text-muted">ID: {{ mid }}</small>
+            </div>
+            
+            <h5 class="text-white">{{ m.type }} - {{ m.team_type }} ({{ m.map }})</h5>
+            <p class="small text-muted mb-3"><i class="fas fa-clock"></i> {{ m.time }}</p>
+            
+            <div class="bg-dark rounded p-2 mb-3 border border-secondary">
+                <h6 class="text-neon-p small mb-2"><i class="fas fa-users"></i> MY TEAM</h6>
+                <ul class="list-unstyled mb-0 small text-light">
+                    {% set ns = namespace(found=false) %}
+                    {% for p in m.participants if p %}
+                        {% set player_found = false %}
+                        {# চেক করা হচ্ছে ইউজার এই টিমে আছে কি না #}
+                        {% for plr in p.players %}
+                            {% if plr.added_by|string == session['user_id']|string or plr.game_uid|string == session['user_id']|string %}
+                                {% set ns.found = true %}
+                            {% endif %}
+                        {% endfor %}
+
+                        {# যদি টিমে পাওয়া যায়, তবে সব প্লেয়ার দেখাও #}
+                        {% if ns.found %}
+                            {% for plr in p.players %}
+                            <li class="d-flex justify-content-between border-bottom border-secondary py-1">
+                                <span>{{ plr.game_name }}</span>
+                                <span class="text-muted">{{ plr.game_uid }}</span>
+                            </li>
+                            {% endfor %}
+                            {% set ns.found = false %} {# লুপ ব্রেক করার জন্য #}
+                        {% endif %}
+                    {% endfor %}
+                </ul>
+            </div>
+
+            {% if m.status == 'matching' or (m.room_id and m.room_pass and m.status != 'completed') %}
+            <div class="card bg-dark border-success p-2">
+                <div class="d-flex justify-content-between text-success">
+                    <div><strong>ID:</strong> <span class="user-select-all">{{ m.room_id }}</span></div>
+                    <div><strong>PASS:</strong> <span class="user-select-all">{{ m.room_pass }}</span></div>
+                </div>
+                <small class="text-muted mt-1 text-center d-block">Click text to copy</small>
+            </div>
+            {% else %}
+            <div class="alert alert-secondary p-2 small mb-0 text-center">
+                Room details will appear here 15 mins before start.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="text-center mt-5 text-muted">
+        <i class="fas fa-ghost fa-3x mb-3"></i>
+        <p>You haven't joined any matches yet.</p>
+    </div>
+{% endif %}
+{% endblock %}

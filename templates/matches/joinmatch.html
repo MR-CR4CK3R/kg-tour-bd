@@ -1,0 +1,57 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="card card-custom p-3">
+    <h4 class="text-neon mb-3">CONFIRM JOIN</h4>
+    
+    <div class="d-flex justify-content-between mb-3 text-secondary small">
+        <span>TYPE: {{ match.type }}</span>
+        <span>TEAM: {{ match.team_type }}</span>
+    </div>
+
+    <div class="alert alert-info d-flex justify-content-between align-items-center">
+        <span><strong>Fee:</strong> ৳ {{ match.fee }} / Player</span>
+        <span class="badge bg-light text-dark">Slots: {{ slots }} Left</span>
+    </div>
+
+    <form method="POST">
+        {% set team_map = {'SOLO': 1, 'DUO': 2, 'TRIO': 3, 'SQUAD': 4} %}
+        {% set max_p = team_map.get(match.team_type, 1) %}
+        
+        <div class="mb-4">
+            <label class="form-label text-muted">Select Number of Players</label>
+            <select name="player_count" id="player_count" class="form-select bg-dark text-white border-secondary" onchange="updateFields()">
+                {% for i in range(1, max_p + 1) %}
+                    <option value="{{ i }}">{{ i }} Player(s) - ৳ {{ match.fee * i }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div id="player_fields"></div>
+
+        <button type="submit" class="btn btn-neon w-100 mt-3 py-3">PAY & JOIN</button>
+    </form>
+</div>
+
+<script>
+function updateFields() {
+    const count = document.getElementById('player_count').value;
+    const container = document.getElementById('player_fields');
+    container.innerHTML = '';
+    
+    for (let i = 1; i <= count; i++) {
+        container.innerHTML += `
+            <div class="card bg-dark border-secondary p-3 mb-3">
+                <h6 class="text-info mb-2">Player ${i} Details</h6>
+                <div class="mb-2">
+                    <input type="text" name="player_uid[]" class="form-control form-control-sm" placeholder="Paste In-Game UID" required>
+                </div>
+                <div>
+                    <input type="text" name="player_name[]" class="form-control form-control-sm" placeholder="In-Game Name" required>
+                </div>
+            </div>`;
+    }
+}
+// Init on load
+document.addEventListener('DOMContentLoaded', updateFields);
+</script>
+{% endblock %}

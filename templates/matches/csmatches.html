@@ -1,0 +1,39 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="text-warning">CLASH SQUAD MATCHES</h4>
+    <a href="{{ url_for('matches_hub') }}" class="btn btn-sm btn-outline-secondary">Back</a>
+</div>
+
+{% if matches %}
+    {% for mid, m in matches.items() %}
+    <div class="card card-custom mb-3 border-warning">
+        <div class="card-body">
+            <div class="d-flex justify-content-between mb-2">
+                <span class="badge bg-warning text-dark">{{ m.type }} - {{ m.team_type }}</span>
+                <span class="text-neon fw-bold">Entry: ৳ {{ m.fee }}</span>
+            </div>
+            <h5 class="card-title text-white">Map: {{ m.map }}</h5>
+            <div class="row text-muted small mb-3">
+                <div class="col-6"><i class="fas fa-clock"></i> {{ m.time }}</div>
+                <div class="col-6 text-end"><i class="fas fa-users"></i> {{ m.limit }} Slots</div>
+                <div class="col-12 mt-1"><i class="fas fa-skull"></i> Per Kill: ৳ {{ m.per_kill }}</div>
+            </div>
+            <div class="alert alert-dark p-2 small mb-3">
+                <div class="d-flex justify-content-between">
+                    <span>🥇 1st: ৳ {{ m.prize_1 }}</span>
+                    <span>🥈 2nd: ৳ {{ m.prize_2 }}</span>
+                    <span>🥉 3rd: ৳ {{ m.prize_3 }}</span>
+                </div>
+            </div>
+            <a href="{{ url_for('join_match', mid=mid) }}" class="btn btn-neon w-100">JOIN SQUAD</a>
+        </div>
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="text-center mt-5 text-muted">
+        <i class="fas fa-gamepad fa-3x mb-3"></i>
+        <p>No CS matches available right now.</p>
+    </div>
+{% endif %}
+{% endblock %}
