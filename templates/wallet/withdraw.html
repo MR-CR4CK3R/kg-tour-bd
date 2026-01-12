@@ -2,23 +2,23 @@
 {% block content %}
 <div class="card card-custom p-4">
     <h4 class="text-danger mb-3">WITHDRAW FUNDS</h4>
-    <p class="text-muted">Winning Balance: <span class="text-white">৳ {{ user.winning_balance }}</span></p>
+    <p class="text-white">Winning Balance: <span class="text-white">৳ {{ user.winning_balance }}</span></p>
     <div class="alert alert-dark small">Min Withdraw: ৳ {{ settings.min_withdraw }}</div>
 
     <form method="POST">
         <div class="mb-3">
-            <label class="form-label text-muted">Select Method</label>
+            <label class="form-label text-white">Select Method</label>
             <select name="method" class="form-select bg-dark text-white border-secondary">
                 <option value="Bkash">Bkash</option>
                 <option value="Nagad">Nagad</option>
             </select>
         </div>
         <div class="mb-3">
-            <label class="form-label text-muted">Amount</label>
+            <label class="form-label text-white">Amount</label>
             <input type="number" name="amount" class="form-control" step="0.01" max="{{ user.winning_balance }}" required>
         </div>
         <div class="mb-4">
-            <label class="form-label text-muted">Receiving Number</label>
+            <label class="form-label text-white">Receiving Number</label>
             <input type="tel" name="number" class="form-control" placeholder="01xxxxxxxxx" required>
         </div>
         <button type="submit" class="btn btn-danger w-100">REQUEST WITHDRAW</button>

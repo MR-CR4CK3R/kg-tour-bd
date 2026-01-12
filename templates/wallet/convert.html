@@ -7,7 +7,7 @@
             <h5>WINNING</h5>
             <h3>৳ {{ user.winning_balance }}</h3>
         </div>
-        <i class="fas fa-chevron-right mx-4 text-muted"></i>
+        <i class="fas fa-chevron-right mx-4 text-white"></i>
         <div class="text-info">
             <h5>MAIN</h5>
             <h3>৳ {{ user.main_balance }}</h3>
@@ -16,7 +16,7 @@
     
     <form method="POST">
         <div class="mb-3">
-            <label class="form-label text-muted">Amount to Convert</label>
+            <label class="form-label text-white">Amount to Convert</label>
             <input type="number" name="amount" class="form-control text-center" max="{{ user.winning_balance }}" required>
         </div>
         <button type="submit" class="btn btn-warning w-100 fw-bold">TRANSFER NOW</button>
