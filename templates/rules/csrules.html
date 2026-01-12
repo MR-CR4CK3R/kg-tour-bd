@@ -1,0 +1,10 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="card card-custom p-4 border-warning">
+    <h4 class="text-warning mb-3">CLASH SQUAD RULES</h4>
+    <div class="text-white" style="white-space: pre-wrap; line-height: 1.6;">{{ content }}</div>
+</div>
+<div class="text-center mt-3">
+    <a href="{{ url_for('rules_hub') }}" class="btn btn-sm btn-secondary">Back to Rules</a>
+</div>
+{% endblock %}
