@@ -1,37 +1,15 @@
 {% extends "layout.html" %}
-
 {% block content %}
-<style>
-    /* এই পেজের জন্য স্পেশাল কিছু স্টাইল */
-    .logo-glow {
-        width: 150px;
-        height: 150px;
-        object-fit: cover;
-        border-radius: 50%;
-        border: 3px solid #f39c12; /* গোল্ডেন বর্ডার */
-        box-shadow: 0 0 20px rgba(243, 156, 18, 0.5); /* গ্লো ইফেক্ট */
-    }
-    
-    .text-neon {
-        text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
-    }
-</style>
-
-<div class="text-center d-flex flex-column justify-content-center align-items-center" style="height: 80vh;">
-    
-    <div class="mb-4">
-        <img src="{{ url_for('static', filename='logo.jpg') }}" alt="Khelo Gamers Logo" class="logo-glow mb-3">
+<div class="text-center d-flex flex-column justify-content-center" style="height: 80vh;">
+    <div class="mb-5">
+        <img src="{{ url_for('static', filename='logo.jpg') }}" alt="Khelo Gamers Logo" style="width: 150px; margin-bottom: 1rem;">
         
-        <h1 class="display-3 text-neon fw-bold text-white">KHELO<br>GAMERS</h1>
-        <p class="lead text-secondary mt-2 fw-bold" style="letter-spacing: 3px; color: #f39c12 !important;">
-            COMPETE <span class="text-white">|</span> WIN <span class="text-white">|</span> EARN
-        </p>
+        <h1 class="display-3 text-neon fw-bold">KHELO<br>GAMERS</h1>
+        <p class="lead text-secondary mt-2">COMPETE | WIN | EARN</p>
     </div>
-
-    <div class="d-grid gap-3 col-10 col-md-6 mx-auto">
-        <a href="{{ url_for('auth') }}" class="btn btn-warning btn-lg py-3 fw-bold">LOGIN / SIGNUP</a>
+    <div class="d-grid gap-3">
+        <a href="{{ url_for('auth') }}" class="btn btn-neon btn-lg py-3">LOGIN / SIGNUP</a>
         <a href="{{ url_for('support') }}" class="btn btn-outline-light btn-lg">SUPPORT</a>
     </div>
-
 </div>
 {% endblock %}
