@@ -369,14 +369,34 @@ def profile(): return render_template('myprofile.html', user=current_user())
 def edit_profile(field):
     if not is_logged_in(): return redirect(url_for('auth'))
     uid = session['user_id']
+    
     if request.method == 'POST':
+        # আপডেট: এখানে .strip() বাদ দেওয়া হয়েছে, ইউজার যা লিখবে হুবহু তাই নেওয়া হবে
         value = request.form.get('value')
+        
+        # --- ডুপ্লিকেট চেক শুরু ---
+        if field in ['email', 'phone']:
+            users = get_db('users') or {}
+            for other_uid, u in users.items():
+                # যদি অন্য কোনো ইউজারের (নিজের আইডি বাদে) এই একই ইমেইল বা ফোন থাকে
+                if other_uid != uid and str(u.get(field)) == value:
+                    flash(f"This {field} is already taken by another user.", "danger")
+                    return redirect(url_for('edit_profile', field=field))
+        # --- ডুপ্লিকেট চেক শেষ ---
+
         if field == 'password':
-            old_pass = request.form.get('old_password'); user = current_user()
-            if user['password'] != old_pass: flash("Wrong old password.", "danger"); return redirect(url_for('edit_profile', field=field))
+            old_pass = request.form.get('old_password')
+            user = current_user()
+            if user['password'] != old_pass: 
+                flash("Wrong old password.", "danger")
+                return redirect(url_for('edit_profile', field=field))
             db.reference(f'users/{uid}/password').set(value)
-        else: db.reference(f'users/{uid}/{field}').set(value)
-        flash("Updated.", "success"); return redirect(url_for('profile'))
+        else: 
+            db.reference(f'users/{uid}/{field}').set(value)
+            
+        flash("Updated.", "success")
+        return redirect(url_for('profile'))
+        
     template_map = {'name': 'myprofile/editname.html', 'email': 'myprofile/editemail.html', 'phone': 'myprofile/editphone.html', 'password': 'myprofile/editpassword.html'}
     return render_template(template_map.get(field), user=current_user())
 
@@ -420,4 +440,5 @@ def rules_detail(rtype):
 def support(): return render_template('support.html')
 
 if __name__ == '__main__':
+
     app.run(debug=True, host='0.0.0.0', port=5000)
