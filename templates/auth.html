@@ -19,6 +19,8 @@
         
         <div class="tab-pane fade {% if not step or step == 'init' %}show active{% endif %}" id="login-tab" role="tabpanel">
             <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                
                 <input type="hidden" name="action" value="login">
                 <div class="mb-3">
                     <label class="form-label text-white">Phone or Email</label>
@@ -42,6 +44,8 @@
             
             {% if step == 'init' or not step %}
             <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
                 <input type="hidden" name="action" value="signup_init">
                 
                 <div class="mb-3">
@@ -79,6 +83,8 @@
             </div>
             
             <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
                 <input type="hidden" name="action" value="verify_otp">
                 
                 <div class="mb-3">
