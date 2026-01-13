@@ -18,7 +18,7 @@ from telebot import TeleBot
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024 
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "fallback_local_key_change_in_prod") 
-csrf = CSRFProtect(app)ণ
+csrf = CSRFProtect(app)
 app.config['SESSION_COOKIE_SECURE'] = True      # True if using HTTPS
 app.config['SESSION_COOKIE_HTTPONLY'] = True    # Prevent JS access
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'   
@@ -536,3 +536,4 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
