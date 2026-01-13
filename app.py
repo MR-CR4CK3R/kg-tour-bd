@@ -6,7 +6,6 @@ import random
 import string
 import time
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, make_response
-# [NEW] Import CSRF Protection
 from flask_wtf.csrf import CSRFProtect
 import firebase_admin
 from firebase_admin import credentials, db
@@ -15,15 +14,13 @@ from telebot import TeleBot
 # --- CONFIGURATION (SECURE ENV) ---
 app = Flask(__name__)
 
-# [NEW] 1. UPLOAD MEMORY LIMIT (Prevents crashing RAM with huge files)
-# Limits uploads to 5 Megabytes.
+# [NEW] 1. UPLOAD MEMORY LIMIT
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024 
 
 # Secret Key
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "fallback_local_key") 
 
 # [NEW] 2. CSRF PROTECTION INITIALIZATION
-# This secures all POST requests globally
 csrf = CSRFProtect(app)
 
 # Telegram Config
@@ -213,6 +210,21 @@ def auth():
                 db.reference(f'users/{new_uid}').set(new_user)
                 db.reference(f'used_devices/{device_id}').set(new_uid)
                 db.reference(f'used_ips/{sanitized_ip}').set(new_uid)
+
+                # --- [ADDED] TELEGRAM NOTIFICATION: NEW USER ---
+                if bot:
+                    try:
+                        msg = (
+                            f"👤 NEW USER REGISTERED\n\n"
+                            f"📛 Name: {new_user['name']}\n"
+                            f"🆔 UID: {new_uid}\n"
+                            f"📱 Phone: {new_user['phone']}\n"
+                            f"📧 Email: {new_user['email']}"
+                        )
+                        bot.send_message(OWNER_ID, msg)
+                    except Exception as e:
+                        print(f"Telegram Error: {e}")
+                # ---------------------------------------------
                 
                 session['user_id'] = new_uid
                 session.pop('signup_data', None)
@@ -323,6 +335,16 @@ def deposit():
         tid = str(uuid.uuid4())[:8]
         data = {"id": tid, "userid": session['user_id'], "type": "deposit", "method": method, "amount": amount, "sender": sender, "trx_id": trx_id, "status": "pending", "time": str(datetime.datetime.now())}
         db.reference(f'transactions/{tid}').set(data)
+
+        # --- [ADDED] TELEGRAM NOTIFICATION: DEPOSIT ---
+        if bot:
+            try:
+                msg = f"🔔 New Deposit Request from User {session['user_id']}"
+                bot.send_message(OWNER_ID, msg)
+            except Exception as e:
+                print(f"Telegram Error: {e}")
+        # ----------------------------------------------
+
         flash("Deposit submitted.", "success"); return redirect(url_for('wallet'))
     return render_template('wallet/deposit.html', settings=settings)
 
@@ -342,6 +364,16 @@ def withdraw():
             tid = str(uuid.uuid4())[:8]
             data = {"id": tid, "userid": session['user_id'], "type": "withdraw", "method": method, "amount": amount, "number": number, "status": "pending", "time": str(datetime.datetime.now())}
             db.reference(f'transactions/{tid}').set(data)
+
+            # --- [ADDED] TELEGRAM NOTIFICATION: WITHDRAW ---
+            if bot:
+                try:
+                    msg = f"🔔 New Withdraw Request from User {session['user_id']}"
+                    bot.send_message(OWNER_ID, msg)
+                except Exception as e:
+                    print(f"Telegram Error: {e}")
+            # -----------------------------------------------
+
             flash("Withdraw submitted.", "success"); return redirect(url_for('wallet'))
     return render_template('wallet/withdraw.html', settings=settings, user=user)
 
@@ -375,15 +407,11 @@ def edit_profile(field):
     if not is_logged_in(): return redirect(url_for('auth'))
     uid = session['user_id']
     
-    # --- SECURITY FIX: WHITELIST ---
-    # Only allow these specific fields to be edited.
-    # This prevents hackers from editing 'main_balance', 'role', or 'is_banned'.
     ALLOWED_FIELDS = ['name', 'email', 'phone', 'password']
     
     if field not in ALLOWED_FIELDS:
         flash("Error: Invalid or unauthorized field.", "danger")
         return redirect(url_for('profile'))
-    # -------------------------------
     
     if request.method == 'POST':
         value = request.form.get('value', '').strip()
@@ -405,7 +433,6 @@ def edit_profile(field):
                 return redirect(url_for('edit_profile', field=field))
             db.reference(f'users/{uid}/password').set(value)
         else: 
-            # Safe because we checked ALLOWED_FIELDS above
             db.reference(f'users/{uid}/{field}').set(value)
             
         flash("Updated.", "success")
