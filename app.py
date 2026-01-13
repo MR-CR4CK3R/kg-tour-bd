@@ -6,14 +6,25 @@ import random
 import string
 import time
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, make_response
+# [NEW] Import CSRF Protection
+from flask_wtf.csrf import CSRFProtect
 import firebase_admin
 from firebase_admin import credentials, db
 from telebot import TeleBot
 
 # --- CONFIGURATION (SECURE ENV) ---
 app = Flask(__name__)
-# Secret Key এনভায়রনমেন্ট ভেরিয়েবল থেকে নেওয়া হবে
+
+# [NEW] 1. UPLOAD MEMORY LIMIT (Prevents crashing RAM with huge files)
+# Limits uploads to 5 Megabytes.
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024 
+
+# Secret Key
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "fallback_local_key") 
+
+# [NEW] 2. CSRF PROTECTION INITIALIZATION
+# This secures all POST requests globally
+csrf = CSRFProtect(app)
 
 # Telegram Config
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -22,7 +33,7 @@ OWNER_ID = int(os.environ.get("OWNER_ID", 7480892660))
 EMAIL_API_URL = "https://khelo-gamers.vercel.app/api/"
 FIREBASE_DB_URL = "https://khelo-gamers-of-bd-default-rtdb.asia-southeast1.firebasedatabase.app/"
 
-# Bot কানেকশন (সেফটি চেক সহ)
+# Bot Connection
 if TOKEN:
     bot = TeleBot(TOKEN)
 else:
@@ -32,7 +43,6 @@ else:
 # --- FIREBASE INITIALIZATION (SECURE) ---
 if not firebase_admin._apps:
     try:
-        # প্রাইভেট কি লোড এবং নিউলাইন ফিক্স
         private_key = os.environ.get("FIREBASE_PRIVATE_KEY")
         if private_key:
             private_key = private_key.replace('\\n', '\n')
@@ -51,7 +61,6 @@ if not firebase_admin._apps:
             "universe_domain": "googleapis.com"
         }
         
-        # ক্রেডেনশিয়াল ভেরিফাই করে অ্যাপ চালু
         if private_key and os.environ.get("FIREBASE_CLIENT_EMAIL"):
             cred = credentials.Certificate(svi)
             firebase_admin.initialize_app(cred, {'databaseURL': FIREBASE_DB_URL})
@@ -106,7 +115,6 @@ def dashboard():
 
 @app.route('/auth', methods=['GET', 'POST'])
 def auth():
-    # --- 1. SETUP VARIABLES ---
     if request.headers.getlist("X-Forwarded-For"):
         user_ip = request.headers.getlist("X-Forwarded-For")[0]
     else:
@@ -121,7 +129,6 @@ def auth():
     if request.method == 'POST':
         action = request.form.get('action')
         
-        # --- LOGIN (No Device Check Needed) ---
         if action == 'login':
             login_id = request.form.get('login_id', '').strip()
             password = request.form.get('password', '').strip()
@@ -146,7 +153,6 @@ def auth():
             else:
                 flash("Invalid ID or Password", "danger")
 
-        # --- SIGNUP STEP 1 (Device Check HERE) ---
         elif action == 'signup_init':
             if get_db(f'used_devices/{device_id}'):
                 flash("Device Policy: You already have an account on this device. Please Login.", "warning")
@@ -176,7 +182,6 @@ def auth():
             else:
                 flash("Failed to send OTP.", "danger")
 
-        # --- SIGNUP STEP 2 ---
         elif action == 'verify_otp':
             if get_db(f'used_devices/{device_id}'):
                  flash("Error: Device already registered.", "danger")
@@ -187,7 +192,6 @@ def auth():
             data = session.get('signup_data')
             
             if data and str(data['otp']) == user_otp:
-                # Alphanumeric UID
                 new_uid = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
                 
                 new_user = {
@@ -365,33 +369,43 @@ def transactions():
 @app.route('/profile')
 def profile(): return render_template('myprofile.html', user=current_user())
 
+# [NEW] 3. WHITELIST PROTECTION AND SECURED EDIT PROFILE
 @app.route('/profile/edit/<field>', methods=['GET', 'POST'])
 def edit_profile(field):
     if not is_logged_in(): return redirect(url_for('auth'))
     uid = session['user_id']
     
+    # --- SECURITY FIX: WHITELIST ---
+    # Only allow these specific fields to be edited.
+    # This prevents hackers from editing 'main_balance', 'role', or 'is_banned'.
+    ALLOWED_FIELDS = ['name', 'email', 'phone', 'password']
+    
+    if field not in ALLOWED_FIELDS:
+        flash("Error: Invalid or unauthorized field.", "danger")
+        return redirect(url_for('profile'))
+    # -------------------------------
+    
     if request.method == 'POST':
-        # আপডেট: এখানে .strip() বাদ দেওয়া হয়েছে, ইউজার যা লিখবে হুবহু তাই নেওয়া হবে
-        value = request.form.get('value')
+        value = request.form.get('value', '').strip()
         
-        # --- ডুপ্লিকেট চেক শুরু ---
+        # --- Duplicate Check ---
         if field in ['email', 'phone']:
             users = get_db('users') or {}
             for other_uid, u in users.items():
-                # যদি অন্য কোনো ইউজারের (নিজের আইডি বাদে) এই একই ইমেইল বা ফোন থাকে
                 if other_uid != uid and str(u.get(field)) == value:
                     flash(f"This {field} is already taken by another user.", "danger")
                     return redirect(url_for('edit_profile', field=field))
-        # --- ডুপ্লিকেট চেক শেষ ---
+        # -----------------------
 
         if field == 'password':
             old_pass = request.form.get('old_password')
             user = current_user()
-            if user['password'] != old_pass: 
+            if not user or user.get('password') != old_pass: 
                 flash("Wrong old password.", "danger")
                 return redirect(url_for('edit_profile', field=field))
             db.reference(f'users/{uid}/password').set(value)
         else: 
+            # Safe because we checked ALLOWED_FIELDS above
             db.reference(f'users/{uid}/{field}').set(value)
             
         flash("Updated.", "success")
@@ -439,6 +453,11 @@ def rules_detail(rtype):
 @app.route('/support')
 def support(): return render_template('support.html')
 
-if __name__ == '__main__':
+# [NEW] 4. FILE TOO LARGE HANDLER
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    flash("File too large! Maximum size is 5MB.", "danger")
+    return redirect(url_for('dashboard'))
 
+if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
