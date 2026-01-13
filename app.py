@@ -7,43 +7,48 @@ import string
 import time
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, make_response
 from flask_wtf.csrf import CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from werkzeug.utils import secure_filename
 import firebase_admin
 from firebase_admin import credentials, db
 from telebot import TeleBot
 
 # --- CONFIGURATION (SECURE ENV) ---
 app = Flask(__name__)
-
-# [NEW] 1. UPLOAD MEMORY LIMIT
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024 
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "fallback_local_key_change_in_prod") 
+csrf = CSRFProtect(app)ণ
+app.config['SESSION_COOKIE_SECURE'] = True      # True if using HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True    # Prevent JS access
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'   
+app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(minutes=60) # 30 min auto logout
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["2000 per day", "500 per hour"],
+    storage_uri=os.environ.get("REDIS_URL"), 
+    storage_options={"socket_connect_timeout": 30},
+    strategy="fixed-window"
+)
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 
-# Secret Key
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "fallback_local_key") 
-
-# [NEW] 2. CSRF PROTECTION INITIALIZATION
-csrf = CSRFProtect(app)
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # Telegram Config
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 OWNER_ID = int(os.environ.get("OWNER_ID", 7480892660))
-
 EMAIL_API_URL = "https://khelo-gamers.vercel.app/api/"
 FIREBASE_DB_URL = "https://khelo-gamers-of-bd-default-rtdb.asia-southeast1.firebasedatabase.app/"
-
-# Bot Connection
-if TOKEN:
-    bot = TeleBot(TOKEN)
-else:
-    print("Warning: Bot Token missing in Environment Variables")
-    bot = None
-
-# --- FIREBASE INITIALIZATION (SECURE) ---
+bot = TeleBot(TOKEN) if TOKEN else None
+# --- FIREBASE INITIALIZATION ---
 if not firebase_admin._apps:
     try:
         private_key = os.environ.get("FIREBASE_PRIVATE_KEY")
         if private_key:
             private_key = private_key.replace('\\n', '\n')
-
         svi = {
             "type": "service_account",
             "project_id": "khelo-gamers-of-bd",
@@ -57,12 +62,11 @@ if not firebase_admin._apps:
             "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40khelo-gamers-of-bd.iam.gserviceaccount.com",
             "universe_domain": "googleapis.com"
         }
-        
         if private_key and os.environ.get("FIREBASE_CLIENT_EMAIL"):
             cred = credentials.Certificate(svi)
             firebase_admin.initialize_app(cred, {'databaseURL': FIREBASE_DB_URL})
         else:
-            print("Error: Firebase credentials missing in Vercel Settings.")
+            print("Error: Firebase credentials missing.")
 
     except Exception as e:
         print(f"Firebase Init Error: {e}")
@@ -84,7 +88,7 @@ def current_user():
     return users.get(session['user_id'])
 
 def generate_otp():
-    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6)) # 6 digit standard
 
 def send_email_otp(email, otp):
     try:
@@ -93,6 +97,27 @@ def send_email_otp(email, otp):
         return response.status_code == 200 and response.json().get("status") == "success"
     except:
         return False
+
+def deduct_balance_atomic(user_uid, amount):
+    user_ref = db.reference(f'users/{user_uid}/main_balance')
+    
+    def transaction_func(current_balance):
+        if current_balance is None:
+            return None # User doesn't exist or balance node missing
+        
+        current_balance = float(current_balance)
+        if current_balance >= amount:
+            return current_balance - amount
+        else:
+            raise ValueError("Insufficient Balance") # This aborts the transaction
+
+    try:
+        user_ref.transaction(transaction_func)
+        return True
+    except firebase_admin.db.TransactionError:
+        return False
+    except ValueError:
+        return False # Insufficient balance
 
 # --- ROUTES ---
 
@@ -111,6 +136,7 @@ def dashboard():
     return render_template('dashboard.html', user=user)
 
 @app.route('/auth', methods=['GET', 'POST'])
+@limiter.limit("5 per minute") # [RATE LIMIT] Prevent brute force
 def auth():
     if request.headers.getlist("X-Forwarded-For"):
         user_ip = request.headers.getlist("X-Forwarded-For")[0]
@@ -118,7 +144,6 @@ def auth():
         user_ip = request.remote_addr
     
     sanitized_ip = user_ip.replace('.', '_').replace(':', '_')
-
     device_id = request.cookies.get('device_id')
     if not device_id:
         device_id = str(uuid.uuid4())
@@ -126,6 +151,7 @@ def auth():
     if request.method == 'POST':
         action = request.form.get('action')
         
+        # --- LOGIN ---
         if action == 'login':
             login_id = request.form.get('login_id', '').strip()
             password = request.form.get('password', '').strip()
@@ -143,28 +169,28 @@ def auth():
                 else:
                     db.reference(f'users/{found_uid}/is_logged_in').set(True)
                     session['user_id'] = found_uid
-                    
+                    session.permanent = True # Use config lifetime
                     resp = make_response(redirect(url_for('dashboard')))
-                    resp.set_cookie('device_id', device_id, max_age=315360000)
+                    resp.set_cookie('device_id', device_id, max_age=315360000, secure=True, httponly=True)
                     return resp
             else:
                 flash("Invalid ID or Password", "danger")
 
+        # --- SIGNUP INIT ---
         elif action == 'signup_init':
             if get_db(f'used_devices/{device_id}'):
-                flash("Device Policy: You already have an account on this device. Please Login.", "warning")
+                flash("Device Policy: Account exists on this device.", "warning")
                 return render_template('auth.html', step='init')
 
             existing_uid_on_ip = get_db(f'used_ips/{sanitized_ip}')
             if existing_uid_on_ip:
-                flash("Registration blocked: Limit reached for this IP.", "danger")
+                flash("Registration blocked: IP Limit reached.", "danger")
                 return redirect(url_for('auth'))
 
             name = request.form.get('name')
             phone = request.form.get('phone', '').strip()
             email = request.form.get('email', '').strip()
             users = get_db('users') or {}
-            
             for u in users.values():
                 if str(u.get('phone')) == phone or u.get('email') == email:
                     flash("Phone or Email already registered.", "danger")
@@ -172,13 +198,19 @@ def auth():
             
             otp = generate_otp()
             if send_email_otp(email, otp):
-                session['signup_data'] = {'name': name, 'phone': phone, 'email': email, 'otp': otp}
+                session['signup_data'] = {
+                    'name': name, 'phone': phone, 'email': email, 
+                    'otp': otp,
+                    'otp_time': time.time(),
+                    'attempts': 0
+                }
                 resp = make_response(render_template('auth.html', step='verify_otp'))
-                resp.set_cookie('device_id', device_id, max_age=315360000)
+                resp.set_cookie('device_id', device_id, max_age=315360000, secure=True, httponly=True)
                 return resp
             else:
                 flash("Failed to send OTP.", "danger")
 
+        # --- VERIFY OTP ---
         elif action == 'verify_otp':
             if get_db(f'used_devices/{device_id}'):
                  flash("Error: Device already registered.", "danger")
@@ -187,16 +219,26 @@ def auth():
             user_otp = request.form.get('otp', '').strip()
             password = request.form.get('password')
             data = session.get('signup_data')
-            
-            if data and str(data['otp']) == user_otp:
+
+            if not data:
+                flash("Session expired.", "danger"); return redirect(url_for('auth'))
+            if time.time() - data.get('otp_time', 0) > 300:
+                session.pop('signup_data', None)
+                flash("OTP Expired. Please register again.", "danger")
+                return redirect(url_for('auth'))
+
+            if data.get('attempts', 0) >= 3:
+                session.pop('signup_data', None)
+                flash("Too many failed attempts.", "danger")
+                return redirect(url_for('auth'))
+            if str(data['otp']) == user_otp:
                 new_uid = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
-                
                 new_user = {
                     "userid": new_uid,
                     "name": data.get('name', 'New User'),
                     "phone": data['phone'],
                     "email": data['email'],
-                    "password": password,
+                    "password": password, # Stored as Plain Text
                     "main_balance": 0.0,
                     "winning_balance": 0.0,
                     "role": "U",
@@ -211,29 +253,22 @@ def auth():
                 db.reference(f'used_devices/{device_id}').set(new_uid)
                 db.reference(f'used_ips/{sanitized_ip}').set(new_uid)
 
-                # --- [ADDED] TELEGRAM NOTIFICATION: NEW USER ---
                 if bot:
                     try:
-                        msg = (
-                            f"👤 NEW USER REGISTERED\n\n"
-                            f"📛 Name: {new_user['name']}\n"
-                            f"🆔 UID: {new_uid}\n"
-                            f"📱 Phone: {new_user['phone']}\n"
-                            f"📧 Email: {new_user['email']}"
-                        )
+                        msg = (f"👤 NEW USER\nName: {new_user['name']}\nUID: {new_uid}")
                         bot.send_message(OWNER_ID, msg)
-                    except Exception as e:
-                        print(f"Telegram Error: {e}")
-                # ---------------------------------------------
+                    except: pass
                 
                 session['user_id'] = new_uid
                 session.pop('signup_data', None)
                 
                 resp = make_response(redirect(url_for('dashboard')))
-                resp.set_cookie('device_id', device_id, max_age=315360000)
                 return resp
             else:
-                flash("Invalid OTP", "danger")
+                # Increment fail counter
+                data['attempts'] += 1
+                session['signup_data'] = data
+                flash(f"Invalid OTP. Attempts left: {3 - data['attempts']}", "danger")
                 return render_template('auth.html', step='verify_otp')
 
     return render_template('auth.html', step='init')
@@ -268,18 +303,21 @@ def matches_list(m_type):
     return render_template(template_map.get(m_type, 'matches.html'), matches=filtered)
 
 @app.route('/match/join/<mid>', methods=['GET', 'POST'])
+@limiter.limit("5 per minute") # Rate limit joining attempts
 def join_match(mid):
     if not is_logged_in(): return redirect(url_for('auth'))
     user_id = session['user_id']
     match = get_db(f'matches/{mid}')
-    user = get_db(f'users/{user_id}')
+    
     if not match or match['status'] != 'upcoming':
         flash("Match unavailable.", "danger"); return redirect(url_for('matches_hub'))
+    
     joined_list = match.get('joined', [])
     if isinstance(joined_list, dict): joined_list = list(joined_list.values())
     if user_id in joined_list:
         flash("Already joined.", "warning"); return redirect(url_for('matches_list', m_type='joined'))
     
+    # Check slots locally first (Atomic check happens later but this saves requests)
     current_count = 0
     participants = match.get('participants', [])
     if isinstance(participants, list):
@@ -295,60 +333,70 @@ def join_match(mid):
         player_names = request.form.getlist('player_name[]')
         player_uids = request.form.getlist('player_uid[]')
         total_fee = match['fee'] * player_count
-        if user['main_balance'] < total_fee:
-            flash(f"Insufficient Balance.", "danger"); return redirect(url_for('join_match', mid=mid))
+        
         if player_count > slots_left:
              flash("Not enough slots.", "danger"); return redirect(url_for('join_match', mid=mid))
         
-        new_bal = user['main_balance'] - total_fee
-        db.reference(f'users/{user_id}/main_balance').set(new_bal)
-        if user_id not in joined_list:
-            joined_list.append(user_id)
-            db.reference(f'matches/{mid}/joined').set(joined_list)
-        u_joined = user.get('joined_matches', [])
-        if u_joined is None: u_joined = []
-        if isinstance(u_joined, dict): u_joined = list(u_joined.values())
-        if mid not in u_joined:
-            u_joined.append(mid)
-            db.reference(f'users/{user_id}/joined_matches').set(u_joined)
-        players_data = []
-        for i in range(player_count):
-            players_data.append({"game_uid": player_uids[i], "game_name": player_names[i], "added_by": user_id, "type": "fixed"})
-        new_participant = {"userid": user_id, "team_type": match.get('team_type', 'SOLO'), "players": players_data}
-        next_idx = len(participants) if participants else 0
-        db.reference(f'matches/{mid}/participants/{next_idx}').set(new_participant)
-        flash("Joined Successfully!", "success"); return redirect(url_for('matches_list', m_type='joined'))
+        # [SECURITY] ATOMIC TRANSACTION for Balance
+        if deduct_balance_atomic(user_id, total_fee):
+            # If transaction successful, proceed to add players
+            
+            # Update Joined List
+            if user_id not in joined_list:
+                joined_list.append(user_id)
+                db.reference(f'matches/{mid}/joined').set(joined_list)
+            
+            # Update User's Joined Matches
+            u_joined = get_db(f'users/{user_id}/joined_matches') or []
+            if isinstance(u_joined, dict): u_joined = list(u_joined.values())
+            if mid not in u_joined:
+                u_joined.append(mid)
+                db.reference(f'users/{user_id}/joined_matches').set(u_joined)
+            
+            # Add Participants
+            players_data = []
+            for i in range(player_count):
+                players_data.append({"game_uid": player_uids[i], "game_name": player_names[i], "added_by": user_id, "type": "fixed"})
+            new_participant = {"userid": user_id, "team_type": match.get('team_type', 'SOLO'), "players": players_data}
+            fresh_participants = get_db(f'matches/{mid}/participants') or []
+            next_idx = len(fresh_participants) if isinstance(fresh_participants, list) else len(fresh_participants.keys())
+            db.reference(f'matches/{mid}/participants/{next_idx}').set(new_participant)
+            
+            flash("Joined Successfully!", "success"); return redirect(url_for('matches_list', m_type='joined'))
+        else:
+            flash("Insufficient Balance or Transaction Error.", "danger")
+            return redirect(url_for('join_match', mid=mid))
+
     return render_template('matches/joinmatch.html', match=match, slots=slots_left)
 
 @app.route('/wallet')
 def wallet(): return render_template('wallet.html', user=current_user())
 
 @app.route('/wallet/deposit', methods=['GET', 'POST'])
+@limiter.limit("5 per hour") # Prevent spamming deposit requests
 def deposit():
     if not is_logged_in(): return redirect(url_for('auth'))
     settings = get_db('settings')
     if request.method == 'POST':
         method = request.form.get('method'); amount = float(request.form.get('amount')); sender = request.form.get('sender'); trx_id = request.form.get('trx_id')
+
+        if amount < 10: flash("Minimum deposit 10.", "danger"); return redirect(url_for('deposit'))
         txns = get_db('transactions') or {}
         for t in txns.values():
-            if t.get('trx_id') == trx_id: flash("TrxID used.", "danger"); return redirect(url_for('deposit'))
+            if t.get('trx_id') == trx_id: flash("TrxID used.", "danger"); return redirect(url_for('deposit')) 
         tid = str(uuid.uuid4())[:8]
         data = {"id": tid, "userid": session['user_id'], "type": "deposit", "method": method, "amount": amount, "sender": sender, "trx_id": trx_id, "status": "pending", "time": str(datetime.datetime.now())}
         db.reference(f'transactions/{tid}').set(data)
 
-        # --- [ADDED] TELEGRAM NOTIFICATION: DEPOSIT ---
         if bot:
-            try:
-                msg = f"🔔 New Deposit Request from User {session['user_id']}"
-                bot.send_message(OWNER_ID, msg)
-            except Exception as e:
-                print(f"Telegram Error: {e}")
-        # ----------------------------------------------
+            try: bot.send_message(OWNER_ID, f"🔔 Deposit: {amount} by {session['user_id']}")
+            except: pass
 
         flash("Deposit submitted.", "success"); return redirect(url_for('wallet'))
     return render_template('wallet/deposit.html', settings=settings)
 
 @app.route('/wallet/withdraw', methods=['GET', 'POST'])
+@limiter.limit("3 per hour") # [SECURITY] Withdraw Rate Limit
 def withdraw():
     if not is_logged_in(): return redirect(url_for('auth'))
     settings = get_db('settings')
@@ -356,6 +404,7 @@ def withdraw():
     if request.method == 'POST':
         method = request.form.get('method'); amount = float(request.form.get('amount')); number = request.form.get('number')
         min_wd = float(settings.get('min_withdraw', 100))
+        
         if amount < min_wd: flash(f"Min withdraw {min_wd}", "danger")
         elif user['winning_balance'] < amount: flash("Insufficient Winning Balance", "danger")
         else:
@@ -364,16 +413,9 @@ def withdraw():
             tid = str(uuid.uuid4())[:8]
             data = {"id": tid, "userid": session['user_id'], "type": "withdraw", "method": method, "amount": amount, "number": number, "status": "pending", "time": str(datetime.datetime.now())}
             db.reference(f'transactions/{tid}').set(data)
-
-            # --- [ADDED] TELEGRAM NOTIFICATION: WITHDRAW ---
             if bot:
-                try:
-                    msg = f"🔔 New Withdraw Request from User {session['user_id']}"
-                    bot.send_message(OWNER_ID, msg)
-                except Exception as e:
-                    print(f"Telegram Error: {e}")
-            # -----------------------------------------------
-
+                try: bot.send_message(OWNER_ID, f"🔔 Withdraw: {amount} by {session['user_id']}")
+                except: pass
             flash("Withdraw submitted.", "success"); return redirect(url_for('wallet'))
     return render_template('wallet/withdraw.html', settings=settings, user=user)
 
@@ -384,7 +426,10 @@ def convert():
     if request.method == 'POST':
         amount = float(request.form.get('amount'))
         if amount > 0 and user['winning_balance'] >= amount:
-            db.reference(f'users/{session["user_id"]}').update({'winning_balance': user['winning_balance'] - amount, 'main_balance': user['main_balance'] + amount})
+            db.reference(f'users/{session["user_id"]}').update({
+                'winning_balance': user['winning_balance'] - amount, 
+                'main_balance': user['main_balance'] + amount
+            })
             flash("Converted!", "success"); return redirect(url_for('wallet'))
         else: flash("Invalid amount.", "danger")
     return render_template('wallet/convert.html', user=user)
@@ -401,29 +446,23 @@ def transactions():
 @app.route('/profile')
 def profile(): return render_template('myprofile.html', user=current_user())
 
-# [NEW] 3. WHITELIST PROTECTION AND SECURED EDIT PROFILE
 @app.route('/profile/edit/<field>', methods=['GET', 'POST'])
+@limiter.limit("10 per hour") # Prevent spam editing
 def edit_profile(field):
     if not is_logged_in(): return redirect(url_for('auth'))
     uid = session['user_id']
-    
     ALLOWED_FIELDS = ['name', 'email', 'phone', 'password']
     
     if field not in ALLOWED_FIELDS:
-        flash("Error: Invalid or unauthorized field.", "danger")
-        return redirect(url_for('profile'))
+        flash("Invalid field.", "danger"); return redirect(url_for('profile'))
     
     if request.method == 'POST':
         value = request.form.get('value', '').strip()
-        
-        # --- Duplicate Check ---
         if field in ['email', 'phone']:
             users = get_db('users') or {}
             for other_uid, u in users.items():
                 if other_uid != uid and str(u.get(field)) == value:
-                    flash(f"This {field} is already taken by another user.", "danger")
-                    return redirect(url_for('edit_profile', field=field))
-        # -----------------------
+                    flash(f"{field} taken.", "danger"); return redirect(url_for('edit_profile', field=field))
 
         if field == 'password':
             old_pass = request.form.get('old_password')
@@ -442,18 +481,29 @@ def edit_profile(field):
     return render_template(template_map.get(field), user=current_user())
 
 @app.route('/upload_proof', methods=['GET', 'POST'])
+@limiter.limit("10 per hour")
 def upload_proof():
     if not is_logged_in(): return redirect(url_for('auth'))
     if request.method == 'POST':
-        mid = request.form.get('match_id'); rid = request.form.get('room_id'); file = request.files['proof_image']
-        if file and bot:
-            caption = f"📸 NEW WEB PROOF\nUser: {session['user_id']}\nMatch: {mid}\nRoom: {rid}"
-            try: bot.send_photo(OWNER_ID, file.read(), caption=caption); flash("Proof sent.", "success")
-            except Exception as e: flash(f"Error: {e}", "danger")
+        mid = request.form.get('match_id')
+        rid = request.form.get('room_id')
+        file = request.files.get('proof_image')
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            if bot:
+                caption = f"📸 PROOF\nUser: {session['user_id']}\nMatch: {mid}\nRoom: {rid}"
+                try: bot.send_photo(OWNER_ID, file.read(), caption=caption); flash("Proof sent.", "success")
+                except Exception as e: flash(f"Error: {e}", "danger")
+            else:
+                 flash("Bot not configured.", "warning")
+        else:
+            flash("Invalid file type (png, jpg only).", "danger")
+
         return redirect(url_for('dashboard'))
     return render_template('uploadproof.html')
 
 @app.route('/uid_lookup')
+@limiter.limit("20 per hour") # Prevent API abuse
 def uid_lookup():
     uid = request.args.get('uid'); result = None
     if uid:
@@ -479,11 +529,9 @@ def rules_detail(rtype):
 
 @app.route('/support')
 def support(): return render_template('support.html')
-
-# [NEW] 4. FILE TOO LARGE HANDLER
 @app.errorhandler(413)
 def request_entity_too_large(error):
-    flash("File too large! Maximum size is 5MB.", "danger")
+    flash("File too large! Max 5MB.", "danger")
     return redirect(url_for('dashboard'))
 
 if __name__ == '__main__':
