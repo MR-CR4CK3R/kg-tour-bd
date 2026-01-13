@@ -6,6 +6,8 @@
     <div class="alert alert-dark small">Min Withdraw: ৳ {{ settings.min_withdraw }}</div>
 
     <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
         <div class="mb-3">
             <label class="form-label text-white">Select Method</label>
             <select name="method" class="form-select bg-dark text-white border-secondary">
