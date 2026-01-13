@@ -3,6 +3,8 @@
 <div class="card card-custom p-4">
     <h4>Change Name</h4>
     <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
         <input type="text" name="value" class="form-control mb-3" value="{{ user.name }}" required>
         <button class="btn btn-neon w-100">Update</button>
     </form>
