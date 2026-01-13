@@ -1,6 +1,8 @@
-Flask
-Flask-WTF
-firebase-admin
-requests
-pyTelegramBotAPI
+flask
+flask-limiter
+redis
 gunicorn
+firebase-admin
+pyTelegramBotAPI
+flask-wtf
+requests
