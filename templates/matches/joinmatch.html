@@ -14,6 +14,8 @@
     </div>
 
     <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
         {% set team_map = {'SOLO': 1, 'DUO': 2, 'TRIO': 3, 'SQUAD': 4} %}
         {% set max_p = team_map.get(match.team_type, 1) %}
         
