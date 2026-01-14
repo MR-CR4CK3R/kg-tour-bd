@@ -94,7 +94,7 @@ def current_user():
     return users.get(session['user_id'])
 
 def generate_otp():
-    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
 
 def send_email_otp(email, otp):
     try:
@@ -292,16 +292,38 @@ def matches_hub():
 @app.route('/matches/<m_type>')
 def matches_list(m_type):
     if not is_logged_in(): return redirect(url_for('auth'))
+    
     all_matches = get_db('matches') or {}
     filtered = {}
     user_id = session['user_id']
+    
+    # Sort matches by time
     sorted_items = sorted(all_matches.items(), key=lambda x: x[1].get('time', ''), reverse=True)
+    
     for mid, m in sorted_items:
+        # --- নতুন কোড অংশ শুরু (Slot Calculation) ---
+        current_count = 0
+        participants = m.get('participants', [])
+        
+        # Firebase list/dict হ্যান্ডেল করা
+        if isinstance(participants, list):
+            for p in participants: 
+                if p: current_count += len(p.get('players', []))
+        elif isinstance(participants, dict):
+            for p in participants.values(): 
+                if p: current_count += len(p.get('players', []))
+        
+        # এই সংখ্যাটি ম্যাচের তথ্যের সাথে যুক্ত করে দিচ্ছি
+        m['filled_slots'] = current_count
+        # --- নতুন কোড অংশ শেষ ---
+
         if m_type == 'joined':
             joined_list = m.get('joined', [])
             if isinstance(joined_list, dict): joined_list = list(joined_list.values())
             if user_id in joined_list: filtered[mid] = m
-        elif m.get('type') == m_type.upper() and m.get('status') == 'upcoming': filtered[mid] = m
+        elif m.get('type') == m_type.upper() and m.get('status') == 'upcoming': 
+            filtered[mid] = m
+            
     template_map = {'br': 'matches/brmatches.html', 'cs': 'matches/csmatches.html', 'joined': 'matches/myjoinedmatch.html'}
     return render_template(template_map.get(m_type, 'matches.html'), matches=filtered)
 
@@ -569,3 +591,4 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
