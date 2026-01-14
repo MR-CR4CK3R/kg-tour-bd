@@ -371,7 +371,7 @@ def matches_hub():
         if m.get('status') == 'upcoming':
             m_type = m.get('type', '').upper()
             if m_type in counts:
-                counts[m_type] += 1ো
+                counts[m_type] += 1
     return render_template('matches.html', counts=counts)
 
 @app.route('/matches/<m_type>')
@@ -686,4 +686,5 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
