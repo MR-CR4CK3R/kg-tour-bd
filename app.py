@@ -97,11 +97,31 @@ def current_user():
 def generate_otp():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
-# --- EMAIL FUNCTION ---
+# --- NEW HELPER FUNCTION FOR CONSISTENT COUNTING ---
+def get_match_player_count(m):
+    count = 0
+    # Priority 1: Check participants (Detailed team data)
+    if 'participants' in m:
+        participants = m['participants']
+        if isinstance(participants, list):
+            for p in participants:
+                if p: count += len(p.get('players', []))
+        elif isinstance(participants, dict):
+             for p in participants.values():
+                 if p: count += len(p.get('players', []))
+    
+    # Priority 2: Fallback to 'joined' list if participants count is 0
+    if count == 0 and 'joined' in m:
+        joined = m['joined']
+        if isinstance(joined, list): count = len(joined)
+        elif isinstance(joined, dict): count = len(joined)
+    
+    return count
+# ---------------------------------------------------
+
 def send_email_otp(email, otp, endpoint="vmail"):
     try:
         headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
-        # endpoint will be 'vmail' for signup, 'fpass' for forgot password
         response = requests.get(f"{EMAIL_API_URL}{endpoint}?to={email}&otp={otp}", headers=headers, timeout=10)
         return response.status_code == 200 and response.json().get("status") == "success"
     except:
@@ -160,7 +180,6 @@ def auth():
     if request.method == 'POST':
         action = request.form.get('action')
         
-        # --- LOGIN ---
         if action == 'login':
             login_id = request.form.get('login_id', '').strip()
             password = request.form.get('password', '').strip()
@@ -186,7 +205,6 @@ def auth():
             else:
                 flash("Invalid ID or Password", "danger")
 
-        # --- FORGOT PASSWORD INIT ---
         elif action == 'forgot_init':
             identifier = request.form.get('identifier', '').strip()
             users = get_db('users') or {}
@@ -220,7 +238,6 @@ def auth():
             
             return render_template('auth.html', step='forgot_init')
 
-        # --- FORGOT PASSWORD VERIFY ---
         elif action == 'forgot_verify':
             user_otp = request.form.get('otp', '').strip()
             new_password = request.form.get('new_password', '').strip()
@@ -252,7 +269,6 @@ def auth():
                 flash(f"Invalid OTP. Attempts left: {3 - data['attempts']}", "danger")
                 return render_template('auth.html', step='forgot_verify')
 
-        # --- SIGNUP INIT ---
         elif action == 'signup_init':
             if get_db(f'used_devices/{device_id}'):
                 flash("Device Policy: Account exists.", "warning")
@@ -287,7 +303,6 @@ def auth():
             else:
                 flash("Failed to send OTP.", "danger")
 
-        # --- SIGNUP VERIFY ---
         elif action == 'verify_otp':
             if get_db(f'used_devices/{device_id}'):
                  flash("Error: Device already registered.", "danger")
@@ -385,17 +400,22 @@ def matches_list(m_type):
     sorted_items = sorted(all_matches.items(), key=lambda x: x[1].get('time', ''), reverse=True)
     
     for mid, m in sorted_items:
-        current_count = 0
-        participants = m.get('participants', [])
+        # --- FIX: Use Consistent Counting ---
+        joined_count = get_match_player_count(m)
+        m['joined_count'] = joined_count
         
-        if isinstance(participants, list):
-            for p in participants: 
-                if p: current_count += len(p.get('players', []))
-        elif isinstance(participants, dict):
-            for p in participants.values(): 
-                if p: current_count += len(p.get('players', []))
-        
-        m['filled_slots'] = current_count
+        # --- FIX: Calculate Percentage for Progress Bar ---
+        try:
+            limit = int(m.get('limit', 1))
+            if limit > 0:
+                percent = (joined_count / limit) * 100
+                if percent > 100: percent = 100
+                m['fill_percent'] = round(percent)
+            else:
+                m['fill_percent'] = 0
+        except:
+            m['fill_percent'] = 0
+        # --------------------------------------------------
 
         if m_type == 'joined':
             joined_list = m.get('joined', [])
@@ -404,11 +424,10 @@ def matches_list(m_type):
         elif m.get('type') == m_type.upper() and m.get('status') == 'upcoming': 
             filtered[mid] = m
             
-    # --- UPDATED TEMPLATE MAP FOR LONE WOLF (LW) ---
     template_map = {
         'br': 'matches/brmatches.html', 
         'cs': 'matches/csmatches.html', 
-        'lw': 'matches/lwmatches.html', # Added LW here
+        'lw': 'matches/lwmatches.html',
         'joined': 'matches/myjoinedmatch.html'
     }
     
@@ -429,14 +448,8 @@ def join_match(mid):
     if user_id in joined_list:
         flash("Already joined.", "warning"); return redirect(url_for('matches_list', m_type='joined'))
     
-    current_count = 0
-    participants = match.get('participants', [])
-    if isinstance(participants, list):
-        for p in participants: 
-            if p: current_count += len(p.get('players', []))
-    elif isinstance(participants, dict):
-        for p in participants.values(): 
-            if p: current_count += len(p.get('players', []))
+    # --- FIX: Use Consistent Counting ---
+    current_count = get_match_player_count(match)
     slots_left = match['limit'] - current_count
 
     if request.method == 'POST':
@@ -478,9 +491,9 @@ def join_match(mid):
             
             new_participant = {"userid": user_id, "team_type": match.get('team_type', 'SOLO'), "players": players_data}
             
-            fresh_participants = get_db(f'matches/{mid}/participants') or []
-            next_idx = len(fresh_participants) if isinstance(fresh_participants, list) else len(fresh_participants.keys())
-            db.reference(f'matches/{mid}/participants/{next_idx}').set(new_participant)
+            # --- FIX: Use User ID as Key to prevent Index Overwrites ---
+            db.reference(f'matches/{mid}/participants/{user_id}').set(new_participant)
+            # -----------------------------------------------------------
             
             flash("Joined Successfully!", "success"); return redirect(url_for('matches_list', m_type='joined'))
         else:
@@ -673,7 +686,6 @@ def rules_hub(): return render_template('rules.html')
 @app.route('/rules/<rtype>')
 def rules_detail(rtype):
     rules_data = get_db('rules') or {}
-    # Handles lwrules.html automatically based on rtype='lw'
     return render_template(f'rules/{rtype}rules.html', content=rules_data.get(rtype.upper(), "No rules set."))
 
 @app.route('/support')
@@ -686,5 +698,3 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
-
-
