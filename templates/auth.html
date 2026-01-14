@@ -6,6 +6,7 @@
 </div>
 
 <div class="card card-custom p-4">
+    {% if step not in ['forgot_init', 'forgot_verify'] %}
     <ul class="nav nav-pills nav-fill mb-4" id="pills-tab" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link {% if not step or step == 'init' %}active{% endif %}" id="pills-login-tab" data-bs-toggle="pill" data-bs-target="#login-tab" type="button">LOGIN</button>
@@ -14,14 +15,15 @@
             <button class="nav-link {% if step == 'verify_otp' %}active{% endif %}" id="pills-signup-tab" data-bs-toggle="pill" data-bs-target="#signup-tab" type="button">SIGNUP</button>
         </li>
     </ul>
+    {% endif %}
     
     <div class="tab-content" id="pills-tabContent">
         
         <div class="tab-pane fade {% if not step or step == 'init' %}show active{% endif %}" id="login-tab" role="tabpanel">
             <form method="POST">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                
                 <input type="hidden" name="action" value="login">
+                
                 <div class="mb-3">
                     <label class="form-label text-white">Phone or Email</label>
                     <div class="input-group">
@@ -29,13 +31,20 @@
                         <input type="text" name="login_id" class="form-control" placeholder="Enter credentials" required>
                     </div>
                 </div>
-                <div class="mb-4">
+                <div class="mb-3">
                     <label class="form-label text-white">Password</label>
                     <div class="input-group">
                         <span class="input-group-text bg-dark border-secondary text-light"><i class="fas fa-lock"></i></span>
                         <input type="password" name="password" class="form-control" placeholder="Enter password" required>
                     </div>
                 </div>
+
+                <div class="d-flex justify-content-end mb-4">
+                    <a href="{{ url_for('auth', step='forgot_init') }}" class="text-neon text-decoration-none small">
+                        <i class="fas fa-key"></i> Forgot Password?
+                    </a>
+                </div>
+
                 <button type="submit" class="btn btn-neon w-100 py-2">LOGIN NOW</button>
             </form>
         </div>
@@ -45,7 +54,6 @@
             {% if step == 'init' or not step %}
             <form method="POST">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-
                 <input type="hidden" name="action" value="signup_init">
                 
                 <div class="mb-3">
@@ -84,7 +92,6 @@
             
             <form method="POST">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-
                 <input type="hidden" name="action" value="verify_otp">
                 
                 <div class="mb-3">
@@ -97,23 +104,67 @@
                     <label class="form-label text-white">Create Password</label>
                     <div class="input-group">
                         <span class="input-group-text bg-dark border-secondary text-light"><i class="fas fa-key"></i></span>
-                        <input type="password" 
-                               name="password" 
-                               class="form-control" 
-                               placeholder="Set a new password" 
-                               minlength="6" 
-                               pattern="[^_*]+" 
-                               title="Password must be in 6 or longer characters and cannot contain '_' or '*'." 
-                               required>
+                        <input type="password" name="password" class="form-control" placeholder="Set a new password" minlength="6" pattern="[^_*]+" required>
                     </div>
-                    <small class="text-secondary" style="font-size: 0.8em;">Min 6 chars, no '_' or '*' allowed.</small>
                 </div>
                 
                 <button type="submit" class="btn btn-neon w-100 py-2">VERIFY & CREATE ACCOUNT</button>
             </form>
             {% endif %}
-            
         </div>
+
+        {% if step == 'forgot_init' %}
+        <div class="tab-pane fade show active">
+            <h4 class="text-white mb-3"><i class="fas fa-search"></i> Find Account</h4>
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="forgot_init">
+                
+                <div class="mb-4">
+                    <label class="form-label text-white">Enter Phone or Email</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-dark border-secondary text-light"><i class="fas fa-id-card"></i></span>
+                        <input type="text" name="identifier" class="form-control" placeholder="Registered Phone or Email" required>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-neon w-100 py-2">SEND RESET OTP</button>
+                <a href="{{ url_for('auth') }}" class="btn btn-outline-secondary w-100 mt-2">Back to Login</a>
+            </form>
+        </div>
+        {% endif %}
+
+        {% if step == 'forgot_verify' %}
+        <div class="tab-pane fade show active">
+            <h4 class="text-white mb-3"><i class="fas fa-unlock-alt"></i> Reset Password</h4>
+            <div class="alert alert-warning text-center">
+                <small>We sent an OTP to your registered email.</small>
+            </div>
+
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="forgot_verify">
+                
+                <div class="mb-3">
+                    <label class="form-label text-white">Enter OTP</label>
+                    <input type="text" name="otp" class="form-control text-center text-neon fw-bold" 
+                           style="letter-spacing: 5px; font-size: 1.5rem;" placeholder="XXXXXX" required>
+                </div>
+                
+                <div class="mb-4">
+                    <label class="form-label text-white">New Password</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-dark border-secondary text-light"><i class="fas fa-key"></i></span>
+                        <input type="password" name="new_password" class="form-control" placeholder="Enter new password" minlength="6" pattern="[^_*]+" required>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-neon w-100 py-2">CHANGE PASSWORD</button>
+                <a href="{{ url_for('auth', step='forgot_init') }}" class="btn btn-outline-secondary w-100 mt-2">Resend OTP</a>
+            </form>
+        </div>
+        {% endif %}
+
     </div>
 </div>
 {% endblock %}
