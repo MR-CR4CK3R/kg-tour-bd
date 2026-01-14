@@ -1,0 +1,10 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="card card-custom p-4 border-danger">
+    <h4 class="text-danger mb-3">LONE WOLF RULES</h4>
+    <div class="text-white" style="white-space: pre-wrap; line-height: 1.6;">{{ content }}</div>
+</div>
+<div class="text-center mt-3">
+    <a href="{{ url_for('rules_hub') }}" class="btn btn-sm btn-secondary">Back to Rules</a>
+</div>
+{% endblock %}
