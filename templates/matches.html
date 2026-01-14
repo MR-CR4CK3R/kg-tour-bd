@@ -3,28 +3,74 @@
 <h3 class="text-neon mb-4 text-center">MATCH ZONE</h3>
 
 <div class="d-grid gap-3">
+    
     <a href="{{ url_for('matches_list', m_type='br') }}" class="card card-custom p-4 text-decoration-none text-white position-relative overflow-hidden">
         <div class="position-absolute end-0 top-0 p-3 opacity-25"><i class="fas fa-skull fa-4x"></i></div>
-        <h4 class="mb-1">BATTLE ROYALE</h4>
-        <small class="text-info">Survival of the fittest</small>
+        
+        <div class="d-flex justify-content-between align-items-center position-relative" style="z-index: 1;">
+            <div>
+                <h4 class="mb-1">BATTLE ROYALE</h4>
+                <small class="text-info">Survival of the fittest</small>
+            </div>
+            
+            {% if counts.get('BR', 0) > 0 %}
+                <span class="badge bg-success rounded-pill shadow-sm animate__animated animate__pulse animate__infinite">
+                    {{ counts['BR'] }} LIVE
+                </span>
+            {% else %}
+                <span class="badge bg-secondary rounded-pill opacity-50">0 LIVE</span>
+            {% endif %}
+        </div>
     </a>
 
     <a href="{{ url_for('matches_list', m_type='cs') }}" class="card card-custom p-4 text-decoration-none text-white position-relative overflow-hidden">
         <div class="position-absolute end-0 top-0 p-3 opacity-25"><i class="fas fa-crosshairs fa-4x"></i></div>
-        <h4 class="mb-1">CLASH SQUAD</h4>
-        <small class="text-warning">4v4 Tactical Combat</small>
+        
+        <div class="d-flex justify-content-between align-items-center position-relative" style="z-index: 1;">
+            <div>
+                <h4 class="mb-1">CLASH SQUAD</h4>
+                <small class="text-warning">4v4 Tactical Combat</small>
+            </div>
+
+            {% if counts.get('CS', 0) > 0 %}
+                <span class="badge bg-success rounded-pill shadow-sm animate__animated animate__pulse animate__infinite">
+                    {{ counts['CS'] }} LIVE
+                </span>
+            {% else %}
+                <span class="badge bg-secondary rounded-pill opacity-50">0 LIVE</span>
+            {% endif %}
+        </div>
     </a>
 
     <a href="{{ url_for('matches_list', m_type='lw') }}" class="card card-custom p-4 text-decoration-none text-white position-relative overflow-hidden">
         <div class="position-absolute end-0 top-0 p-3 opacity-25"><i class="fas fa-wolf-pack-battalion fa-4x"></i></div>
-        <h4 class="mb-1">LONE WOLF</h4>
-        <small class="text-danger">1v1 & 2v2 Duels</small>
+        
+        <div class="d-flex justify-content-between align-items-center position-relative" style="z-index: 1;">
+            <div>
+                <h4 class="mb-1">LONE WOLF</h4>
+                <small class="text-danger">1v1 & 2v2 Duels</small>
+            </div>
+
+            {% if counts.get('LW', 0) > 0 %}
+                <span class="badge bg-success rounded-pill shadow-sm animate__animated animate__pulse animate__infinite">
+                    {{ counts['LW'] }} LIVE
+                </span>
+            {% else %}
+                <span class="badge bg-secondary rounded-pill opacity-50">0 LIVE</span>
+            {% endif %}
+        </div>
     </a>
 
     <a href="{{ url_for('matches_list', m_type='joined') }}" class="card card-custom p-4 text-decoration-none text-white position-relative overflow-hidden" style="border-color: var(--neon-blue);">
         <div class="position-absolute end-0 top-0 p-3 opacity-25"><i class="fas fa-check-circle fa-4x"></i></div>
-        <h4 class="mb-1 text-neon">MY MATCHES</h4>
-        <small class="text-light">Check joined matches</small>
+        
+        <div class="d-flex justify-content-between align-items-center position-relative" style="z-index: 1;">
+            <div>
+                <h4 class="mb-1 text-neon">MY MATCHES</h4>
+                <small class="text-light">Check joined matches</small>
+            </div>
+            <i class="fas fa-chevron-right text-muted"></i>
+        </div>
     </a>
 </div>
 {% endblock %}
