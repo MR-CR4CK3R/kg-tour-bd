@@ -25,34 +25,59 @@
                 {# --- TEAM LOGIC START --- #}
                 {% set ns = namespace(found=false) %}
                 
-                {# Participants List বা Dict হ্যান্ডেল করা #}
                 {% if m.participants %}
                     {% set participant_list = m.participants.values() if m.participants is mapping else m.participants %}
                     
                     {% for p in participant_list if p %}
                         {% set ns.found = false %}
                         
-                        {# চেক করা হচ্ছে ইউজার এই টিমে আছে কি না #}
+                        {# 1. চেক করা হচ্ছে ইউজার এই টিমে আছে কি না #}
                         {% for plr in p.players %}
-                            {# যদি প্লেয়ারের UID বা Added By বর্তমান ইউজারের সমান হয় #}
                             {% if plr.added_by|string == session['user_id']|string or plr.game_uid|string == session['user_id']|string %}
                                 {% set ns.found = true %}
                             {% endif %}
                         {% endfor %}
 
-                        {# যদি ইউজার এই টিমে থাকে, তবে এই ব্লকটি দেখাবে #}
+                        {# 2. যদি ইউজার এই টিমে থাকে #}
                         {% if ns.found %}
                         
-                            {# --- CAPTAIN ID SHOWCASE (NEW FEATURE) --- #}
-                            <div class="d-flex align-items-center justify-content-between bg-dark border border-warning rounded p-2 mb-2">
-                                <div>
-                                    <span class="text-warning mr-2"><i class="fas fa-crown"></i> CAPTAIN ID:</span>
-                                </div>
-                                <div>
-                                    <span class="text-white font-monospace fw-bold user-select-all">{{ p.userid }}</span>
+                            {# --- FIND CAPTAIN INFO LOGIC --- #}
+                            {% set ns_cap = namespace(name='Unknown', game_uid='N/A') %}
+                            {% for plr in p.players %}
+                                {# ক্যাপ্টেনের added_by এবং টিমের userid একই হবে #}
+                                {% if plr.added_by|string == p.userid|string %}
+                                    {% set ns_cap.name = plr.game_name %}
+                                    {% set ns_cap.game_uid = plr.game_uid %}
+                                {% endif %}
+                            {% endfor %}
+
+                            {# --- CAPTAIN SHOWCASE (ALL 3 DETAILS) --- #}
+                            <div class="bg-dark border border-warning rounded p-2 mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2 border-bottom border-secondary pb-1">
+                                    <span class="text-warning small fw-bold"><i class="fas fa-crown"></i> TEAM CAPTAIN</span>
                                     {% if p.userid|string == session['user_id']|string %}
-                                        <span class="badge bg-success ms-1" style="font-size: 0.7em;">YOU</span>
+                                        <span class="badge bg-success" style="font-size: 0.6em;">YOU</span>
                                     {% endif %}
+                                </div>
+
+                                <div class="row g-2">
+                                    {# 1. System ID #}
+                                    <div class="col-12">
+                                        <small class="text-secondary d-block" style="font-size: 0.7em;">SYSTEM ID (APP)</small>
+                                        <span class="text-white font-monospace user-select-all fw-bold">{{ p.userid }}</span>
+                                    </div>
+
+                                    {# 2. In-Game Name #}
+                                    <div class="col-6">
+                                        <small class="text-secondary d-block" style="font-size: 0.7em;">GAME NAME</small>
+                                        <span class="text-neon fw-bold text-truncate d-block">{{ ns_cap.name }}</span>
+                                    </div>
+
+                                    {# 3. In-Game UID #}
+                                    <div class="col-6 text-end">
+                                        <small class="text-secondary d-block" style="font-size: 0.7em;">GAME UID</small>
+                                        <span class="text-white font-monospace user-select-all">{{ ns_cap.game_uid }}</span>
+                                    </div>
                                 </div>
                             </div>
                             {# ----------------------------------------- #}
