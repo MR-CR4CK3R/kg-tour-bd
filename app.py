@@ -361,7 +361,18 @@ def logout():
 @app.route('/matches')
 def matches_hub():
     if not is_logged_in(): return redirect(url_for('auth'))
-    return render_template('matches.html')
+    all_matches = get_db('matches') or {}
+    counts = {
+        'BR': 0,
+        'CS': 0,
+        'LW': 0
+    }
+    for m in all_matches.values():
+        if m.get('status') == 'upcoming':
+            m_type = m.get('type', '').upper()
+            if m_type in counts:
+                counts[m_type] += 1ো
+    return render_template('matches.html', counts=counts)
 
 @app.route('/matches/<m_type>')
 def matches_list(m_type):
@@ -675,3 +686,4 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
