@@ -39,11 +39,16 @@
                 </div>
             </div>
             
-            {% if m.joined_count >= m.limit %}
+            {% if m.user_has_joined %}
+                <button class="btn btn-success w-100 fw-bold" disabled>
+                    <i class="fas fa-check-circle"></i> ALREADY JOINED
+                </button>
+            {% elif m.joined_count >= m.limit %}
                 <button class="btn btn-secondary w-100" disabled>FULL</button>
             {% else %}
                 <a href="{{ url_for('join_match', mid=mid) }}" class="btn btn-neon w-100">JOIN LONE WOLF</a>
             {% endif %}
+
         </div>
     </div>
     {% endfor %}
