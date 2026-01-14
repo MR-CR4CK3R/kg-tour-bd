@@ -16,7 +16,8 @@ from telebot import TeleBot
 
 app = Flask(__name__)
 
-app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
+# --- CONFIGURATION ---
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB Limit
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "fallback_local_key_change_in_prod")
 
 csrf = CSRFProtect(app)
@@ -24,6 +25,7 @@ csrf = CSRFProtect(app)
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+# SESSION LIFETIME: 2 HOURS
 app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(minutes=120)
 
 limiter = Limiter(
@@ -44,12 +46,13 @@ def allowed_file(filename):
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 OWNER_ID = int(os.environ.get("OWNER_ID", 7480892660))
 
-# API URL
+# API & DB URL
 EMAIL_API_URL = "https://khelo-gamers.vercel.app/api/"
 FIREBASE_DB_URL = "https://khelo-gamers-of-bd-default-rtdb.asia-southeast1.firebasedatabase.app/"
 
 bot = TeleBot(TOKEN) if TOKEN else None
 
+# --- FIREBASE INIT ---
 if not firebase_admin._apps:
     try:
         private_key = os.environ.get("FIREBASE_PRIVATE_KEY")
@@ -79,6 +82,7 @@ if not firebase_admin._apps:
     except Exception as e:
         print(f"Firebase Init Error: {e}")
 
+# --- HELPER FUNCTIONS ---
 def get_db(path):
     try:
         return db.reference(path).get()
@@ -97,9 +101,10 @@ def current_user():
 def generate_otp():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
-# --- HELPER FUNCTION FOR CONSISTENT COUNTING ---
+# Unified logic to count players safely
 def get_match_player_count(m):
     count = 0
+    # Priority 1: Check participants
     if 'participants' in m:
         participants = m['participants']
         if isinstance(participants, list):
@@ -109,13 +114,13 @@ def get_match_player_count(m):
              for p in participants.values():
                  if p: count += len(p.get('players', []))
     
+    # Priority 2: Fallback to 'joined' list
     if count == 0 and 'joined' in m:
         joined = m['joined']
         if isinstance(joined, list): count = len(joined)
         elif isinstance(joined, dict): count = len(joined)
     
     return count
-# ---------------------------------------------------
 
 def send_email_otp(email, otp, endpoint="vmail"):
     try:
@@ -131,7 +136,6 @@ def deduct_balance_atomic(user_uid, amount):
     def transaction_func(current_balance):
         if current_balance is None:
             return None
-        
         current_balance = float(current_balance)
         if current_balance >= amount:
             return current_balance - amount
@@ -145,6 +149,8 @@ def deduct_balance_atomic(user_uid, amount):
         return False
     except ValueError:
         return False
+
+# --- ROUTES ---
 
 @app.route('/')
 def index():
@@ -178,6 +184,7 @@ def auth():
     if request.method == 'POST':
         action = request.form.get('action')
         
+        # --- LOGIN ---
         if action == 'login':
             login_id = request.form.get('login_id', '').strip()
             password = request.form.get('password', '').strip()
@@ -185,7 +192,7 @@ def auth():
             
             found_uid = None
             for uid, u in users.items():
-                if (str(u.get('phone')) == login_id or u.get('email') == login_id) and u.get('password') == password:
+                if u and (str(u.get('phone')) == login_id or u.get('email') == login_id) and u.get('password') == password:
                     found_uid = uid
                     break
             
@@ -196,23 +203,21 @@ def auth():
                     db.reference(f'users/{found_uid}/is_logged_in').set(True)
                     session['user_id'] = found_uid
                     session.permanent = True
-                    
                     resp = make_response(redirect(url_for('dashboard')))
                     resp.set_cookie('device_id', device_id, max_age=315360000, secure=True, httponly=True)
                     return resp
             else:
                 flash("Invalid ID or Password", "danger")
 
+        # --- FORGOT PASSWORD ---
         elif action == 'forgot_init':
             identifier = request.form.get('identifier', '').strip()
             users = get_db('users') or {}
             target_user = None
             target_uid = None
             for uid, u in users.items():
-                if str(u.get('phone')) == identifier or u.get('email') == identifier:
-                    target_user = u
-                    target_uid = uid
-                    break
+                if u and (str(u.get('phone')) == identifier or u.get('email') == identifier):
+                    target_user = u; target_uid = uid; break
             
             if target_user:
                 email = target_user.get('email')
@@ -221,10 +226,8 @@ def auth():
                     session['reset_data'] = {'uid': target_uid, 'otp': otp, 'otp_time': time.time(), 'attempts': 0}
                     flash(f"OTP sent to email ending in ***{email[-4:]}", "info")
                     return render_template('auth.html', step='forgot_verify')
-                else:
-                    flash("Failed to send OTP via Email.", "danger")
-            else:
-                flash("User not found or Email failed.", "danger")
+                else: flash("Failed to send OTP via Email.", "danger")
+            else: flash("User not found or Email failed.", "danger")
             return render_template('auth.html', step='forgot_init')
 
         elif action == 'forgot_verify':
@@ -232,12 +235,9 @@ def auth():
             new_password = request.form.get('new_password', '').strip()
             data = session.get('reset_data')
 
-            if not data:
-                flash("Session expired.", "danger"); return redirect(url_for('auth', step='forgot_init'))
-            if time.time() - data.get('otp_time', 0) > 300:
-                session.pop('reset_data', None); flash("OTP Expired.", "danger"); return redirect(url_for('auth', step='forgot_init'))
-            if data.get('attempts', 0) >= 3:
-                session.pop('reset_data', None); flash("Too many failed attempts.", "danger"); return redirect(url_for('auth', step='forgot_init'))
+            if not data: flash("Session expired.", "danger"); return redirect(url_for('auth', step='forgot_init'))
+            if time.time() - data.get('otp_time', 0) > 300: session.pop('reset_data', None); flash("OTP Expired.", "danger"); return redirect(url_for('auth', step='forgot_init'))
+            if data.get('attempts', 0) >= 3: session.pop('reset_data', None); flash("Too many failed attempts.", "danger"); return redirect(url_for('auth', step='forgot_init'))
 
             if str(data['otp']) == user_otp:
                 uid = data['uid']
@@ -249,6 +249,7 @@ def auth():
                 flash(f"Invalid OTP. Attempts left: {3 - data['attempts']}", "danger")
                 return render_template('auth.html', step='forgot_verify')
 
+        # --- SIGNUP ---
         elif action == 'signup_init':
             if get_db(f'used_devices/{device_id}'):
                 flash("Device Policy: Account exists.", "warning"); return render_template('auth.html', step='init')
@@ -261,7 +262,7 @@ def auth():
             email = request.form.get('email', '').strip()
             users = get_db('users') or {}
             for u in users.values():
-                if str(u.get('phone')) == phone or u.get('email') == email:
+                if u and (str(u.get('phone')) == phone or u.get('email') == email):
                     flash("Phone or Email already registered.", "danger"); return redirect(url_for('auth'))
             
             otp = generate_otp()
@@ -270,8 +271,7 @@ def auth():
                 resp = make_response(render_template('auth.html', step='verify_otp'))
                 resp.set_cookie('device_id', device_id, max_age=315360000, secure=True, httponly=True)
                 return resp
-            else:
-                flash("Failed to send OTP.", "danger")
+            else: flash("Failed to send OTP.", "danger")
 
         elif action == 'verify_otp':
             if get_db(f'used_devices/{device_id}'):
@@ -320,9 +320,14 @@ def logout():
 def matches_hub():
     if not is_logged_in(): return redirect(url_for('auth'))
     all_matches = get_db('matches') or {}
+    
+    # Safely handle if all_matches is a list
+    if isinstance(all_matches, list):
+        all_matches = {str(k): v for k, v in enumerate(all_matches) if v is not None}
+        
     counts = {'BR': 0, 'CS': 0, 'LW': 0}
     for m in all_matches.values():
-        if m.get('status') == 'upcoming':
+        if m and m.get('status') == 'upcoming':
             m_type = m.get('type', '').upper()
             if m_type in counts: counts[m_type] += 1
     return render_template('matches.html', counts=counts)
@@ -332,12 +337,27 @@ def matches_list(m_type):
     if not is_logged_in(): return redirect(url_for('auth'))
     
     all_matches = get_db('matches') or {}
+    
+    # --- CRITICAL FIX: Convert List to Dict if necessary ---
+    if isinstance(all_matches, list):
+        all_matches = {str(k): v for k, v in enumerate(all_matches) if v is not None}
+    elif all_matches is None:
+        all_matches = {}
+    # -----------------------------------------------------
+
     filtered = {}
     user_id = session['user_id']
     
-    sorted_items = sorted(all_matches.items(), key=lambda x: x[1].get('time', ''), reverse=True)
+    # Safe sorting handling None types
+    sorted_items = sorted(
+        all_matches.items(), 
+        key=lambda x: x[1].get('time', '') if x[1] else '', 
+        reverse=True
+    )
     
     for mid, m in sorted_items:
+        if not m: continue # Skip if match data is None
+
         joined_count = get_match_player_count(m)
         m['joined_count'] = joined_count
         
@@ -350,13 +370,13 @@ def matches_list(m_type):
             else: m['fill_percent'] = 0
         except: m['fill_percent'] = 0
 
-        # --- FEATURE 1: Check if user joined ---
+        # Check if user joined (Safe Logic)
         joined_data = m.get('joined', [])
         if isinstance(joined_data, dict): joined_list = list(joined_data.values())
         elif isinstance(joined_data, list): joined_list = joined_data
         else: joined_list = []
+        
         m['user_has_joined'] = user_id in joined_list
-        # ----------------------------------------
 
         if m_type == 'joined':
             if m['user_has_joined']: filtered[mid] = m
@@ -389,6 +409,7 @@ def join_match(mid):
             player_count = int(request.form.get('player_count'))
             if player_count < 1:
                 flash("Minimum 1 player required.", "danger"); return redirect(url_for('join_match', mid=mid))
+            # LW Restriction
             if match.get('type') == 'LW' and player_count > 2:
                 flash("Lone Wolf is restricted to Solo or Duo only.", "danger"); return redirect(url_for('join_match', mid=mid))
         except ValueError:
@@ -402,21 +423,27 @@ def join_match(mid):
              flash("Not enough slots.", "danger"); return redirect(url_for('join_match', mid=mid))
         
         if deduct_balance_atomic(user_id, total_fee):
-            if user_id not in joined_list:
+            # Update Joined List
+            if isinstance(joined_list, list):
                 joined_list.append(user_id)
-                db.reference(f'matches/{mid}/joined').set(joined_list)
+            else:
+                joined_list = [user_id] # Handle empty state
+            db.reference(f'matches/{mid}/joined').set(joined_list)
             
+            # Update User Profile
             u_joined = get_db(f'users/{user_id}/joined_matches') or []
             if isinstance(u_joined, dict): u_joined = list(u_joined.values())
             if mid not in u_joined:
                 u_joined.append(mid)
                 db.reference(f'users/{user_id}/joined_matches').set(u_joined)
             
+            # Create Participant Entry
             players_data = []
             for i in range(player_count):
                 players_data.append({"game_uid": player_uids[i], "game_name": player_names[i], "added_by": user_id, "type": "fixed"})
             
             new_participant = {"userid": user_id, "team_type": match.get('team_type', 'SOLO'), "players": players_data}
+            # Saving by UserID key prevents array issues in Firebase
             db.reference(f'matches/{mid}/participants/{user_id}').set(new_participant)
             
             flash("Joined Successfully!", "success"); return redirect(url_for('matches_list', m_type='joined'))
@@ -443,7 +470,7 @@ def deposit():
 
         txns = get_db('transactions') or {}
         for t in txns.values():
-            if t.get('trx_id') == trx_id: flash("TrxID used.", "danger"); return redirect(url_for('deposit'))
+            if t and t.get('trx_id') == trx_id: flash("TrxID used.", "danger"); return redirect(url_for('deposit'))
             
         tid = str(uuid.uuid4())[:8]
         data = {"id": tid, "userid": session['user_id'], "type": "deposit", "method": method, "amount": amount, "sender": sender, "trx_id": trx_id, "status": "pending", "time": str(datetime.datetime.now())}
@@ -505,8 +532,13 @@ def convert():
 def transactions():
     if not is_logged_in(): return redirect(url_for('auth'))
     all_txns = get_db('transactions') or {}
+    
+    # Safe List handling
+    if isinstance(all_txns, list):
+        all_txns = {str(k): v for k, v in enumerate(all_txns) if v is not None}
+        
     uid = session['user_id']
-    my_txns = [t for t in all_txns.values() if str(t.get('userid')) == str(uid)]
+    my_txns = [t for t in all_txns.values() if t and str(t.get('userid')) == str(uid)]
     my_txns.sort(key=lambda x: x['time'], reverse=True)
     return render_template('wallet/mytransection.html', transactions=my_txns)
 
@@ -526,7 +558,7 @@ def edit_profile(field):
         if field in ['email', 'phone']:
             users = get_db('users') or {}
             for other_uid, u in users.items():
-                if other_uid != uid and str(u.get(field)) == value:
+                if u and other_uid != uid and str(u.get(field)) == value:
                     flash(f"{field} taken.", "danger"); return redirect(url_for('edit_profile', field=field))
         if field == 'password':
             old_pass = request.form.get('old_password')
@@ -541,16 +573,15 @@ def edit_profile(field):
     template_map = {'name': 'myprofile/editname.html', 'email': 'myprofile/editemail.html', 'phone': 'myprofile/editphone.html', 'password': 'myprofile/editpassword.html'}
     return render_template(template_map.get(field), user=current_user())
 
-# --- FEATURE 2: Secure Proof Upload with Password ---
 @app.route('/upload_proof', methods=['GET', 'POST'])
 @limiter.limit("10 per hour")
 def upload_proof():
     if not is_logged_in(): return redirect(url_for('auth'))
     
     if request.method == 'POST':
-        mid = request.form.get('match_id').strip()
-        rid = request.form.get('room_id').strip()
-        r_pass = request.form.get('room_pass').strip()
+        mid = request.form.get('match_id', '').strip()
+        rid = request.form.get('room_id', '').strip()
+        r_pass = request.form.get('room_pass', '').strip()
         file = request.files.get('proof_image')
         
         match = get_db(f'matches/{mid}')
@@ -579,7 +610,6 @@ def upload_proof():
         return redirect(url_for('dashboard'))
         
     return render_template('uploadproof.html')
-# ----------------------------------------------------
 
 @app.route('/uid_lookup')
 @limiter.limit("20 per hour")
@@ -595,7 +625,12 @@ def uid_lookup():
 @app.route('/leaderboard')
 def leaderboard():
     users = get_db('users') or {}
-    sorted_users = sorted(users.values(), key=lambda u: u.get('winning_balance', 0), reverse=True)
+    
+    # Safe Handling for List vs Dict
+    if isinstance(users, list):
+         users = {str(k): v for k, v in enumerate(users) if v is not None}
+         
+    sorted_users = sorted(users.values(), key=lambda u: u.get('winning_balance', 0) if u else 0, reverse=True)
     return render_template('leaderboard.html', top_users=sorted_users[:10])
 
 @app.route('/rules')
@@ -604,6 +639,8 @@ def rules_hub(): return render_template('rules.html')
 @app.route('/rules/<rtype>')
 def rules_detail(rtype):
     rules_data = get_db('rules') or {}
+    if isinstance(rules_data, list): # Safe handling
+        rules_data = {}
     return render_template(f'rules/{rtype}rules.html', content=rules_data.get(rtype.upper(), "No rules set."))
 
 @app.route('/support')
@@ -616,4 +653,3 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
-
