@@ -24,7 +24,7 @@ csrf = CSRFProtect(app)
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(minutes=30)
+app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(minutes=120)
 
 limiter = Limiter(
     get_remote_address,
@@ -616,3 +616,4 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
