@@ -17,15 +17,12 @@ from telebot import TeleBot
 app = Flask(__name__)
 
 # --- CONFIGURATION ---
-app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB Limit
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB Upload Limit
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "fallback_local_key_change_in_prod")
-
 csrf = CSRFProtect(app)
-
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-# SESSION LIFETIME: 2 HOURS
 app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(minutes=120)
 
 limiter = Limiter(
@@ -45,8 +42,6 @@ def allowed_file(filename):
 
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 OWNER_ID = int(os.environ.get("OWNER_ID", 7480892660))
-
-# API & DB URL
 EMAIL_API_URL = "https://khelo-gamers.vercel.app/api/"
 FIREBASE_DB_URL = "https://khelo-gamers-of-bd-default-rtdb.asia-southeast1.firebasedatabase.app/"
 
@@ -58,7 +53,6 @@ if not firebase_admin._apps:
         private_key = os.environ.get("FIREBASE_PRIVATE_KEY")
         if private_key:
             private_key = private_key.replace('\\n', '\n')
-
         svi = {
             "type": "service_account",
             "project_id": "khelo-gamers-of-bd",
@@ -72,16 +66,13 @@ if not firebase_admin._apps:
             "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40khelo-gamers-of-bd.iam.gserviceaccount.com",
             "universe_domain": "googleapis.com"
         }
-        
         if private_key and os.environ.get("FIREBASE_CLIENT_EMAIL"):
             cred = credentials.Certificate(svi)
             firebase_admin.initialize_app(cred, {'databaseURL': FIREBASE_DB_URL})
         else:
             print("Error: Firebase credentials missing.")
-
     except Exception as e:
         print(f"Firebase Init Error: {e}")
-
 # --- HELPER FUNCTIONS ---
 def get_db(path):
     try:
@@ -101,7 +92,7 @@ def current_user():
 def generate_otp():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
-# Unified logic to count players safely
+# Unified logic to count players safely (Handles both List and Dict)
 def get_match_player_count(m):
     count = 0
     # Priority 1: Check participants
@@ -320,8 +311,6 @@ def logout():
 def matches_hub():
     if not is_logged_in(): return redirect(url_for('auth'))
     all_matches = get_db('matches') or {}
-    
-    # Safely handle if all_matches is a list
     if isinstance(all_matches, list):
         all_matches = {str(k): v for k, v in enumerate(all_matches) if v is not None}
         
@@ -335,32 +324,22 @@ def matches_hub():
 @app.route('/matches/<m_type>')
 def matches_list(m_type):
     if not is_logged_in(): return redirect(url_for('auth'))
-    
     all_matches = get_db('matches') or {}
-    
-    # --- CRITICAL FIX: Convert List to Dict if necessary ---
     if isinstance(all_matches, list):
         all_matches = {str(k): v for k, v in enumerate(all_matches) if v is not None}
     elif all_matches is None:
         all_matches = {}
-    # -----------------------------------------------------
-
     filtered = {}
     user_id = session['user_id']
-    
-    # Safe sorting handling None types
     sorted_items = sorted(
         all_matches.items(), 
         key=lambda x: x[1].get('time', '') if x[1] else '', 
         reverse=True
     )
-    
     for mid, m in sorted_items:
-        if not m: continue # Skip if match data is None
-
+        if not m: continue
         joined_count = get_match_player_count(m)
         m['joined_count'] = joined_count
-        
         try:
             limit = int(m.get('limit', 1))
             if limit > 0:
@@ -369,8 +348,6 @@ def matches_list(m_type):
                 m['fill_percent'] = round(percent)
             else: m['fill_percent'] = 0
         except: m['fill_percent'] = 0
-
-        # Check if user joined (Safe Logic)
         joined_data = m.get('joined', [])
         if isinstance(joined_data, dict): joined_list = list(joined_data.values())
         elif isinstance(joined_data, list): joined_list = joined_data
@@ -398,18 +375,17 @@ def join_match(mid):
     
     joined_list = match.get('joined', [])
     if isinstance(joined_list, dict): joined_list = list(joined_list.values())
+    elif not isinstance(joined_list, list): joined_list = []
+
     if user_id in joined_list:
         flash("Already joined.", "warning"); return redirect(url_for('matches_list', m_type='joined'))
-    
     current_count = get_match_player_count(match)
     slots_left = match['limit'] - current_count
-
     if request.method == 'POST':
         try:
             player_count = int(request.form.get('player_count'))
             if player_count < 1:
                 flash("Minimum 1 player required.", "danger"); return redirect(url_for('join_match', mid=mid))
-            # LW Restriction
             if match.get('type') == 'LW' and player_count > 2:
                 flash("Lone Wolf is restricted to Solo or Duo only.", "danger"); return redirect(url_for('join_match', mid=mid))
         except ValueError:
@@ -418,35 +394,67 @@ def join_match(mid):
         player_names = request.form.getlist('player_name[]')
         player_uids = request.form.getlist('player_uid[]')
         total_fee = match['fee'] * player_count
-        
         if player_count > slots_left:
              flash("Not enough slots.", "danger"); return redirect(url_for('join_match', mid=mid))
         
         if deduct_balance_atomic(user_id, total_fee):
-            # Update Joined List
-            if isinstance(joined_list, list):
-                joined_list.append(user_id)
-            else:
-                joined_list = [user_id] # Handle empty state
+            joined_list.append(user_id)
             db.reference(f'matches/{mid}/joined').set(joined_list)
-            
-            # Update User Profile
             u_joined = get_db(f'users/{user_id}/joined_matches') or []
             if isinstance(u_joined, dict): u_joined = list(u_joined.values())
             if mid not in u_joined:
                 u_joined.append(mid)
                 db.reference(f'users/{user_id}/joined_matches').set(u_joined)
+            team_type = match.get('team_type', 'SOLO')
+            max_size = 4 if team_type == 'SQUAD' else 3 if team_type == 'TRIO' else 2 if team_type == 'DUO' else 1
+            is_random = (player_count < max_size)
             
-            # Create Participant Entry
             players_data = []
             for i in range(player_count):
-                players_data.append({"game_uid": player_uids[i], "game_name": player_names[i], "added_by": user_id, "type": "fixed"})
+                players_data.append({
+                    "game_uid": player_uids[i], 
+                    "game_name": player_names[i], 
+                    "added_by": user_id, 
+                    "type": "random" if is_random else "fixed"
+                })
+            participants = match.get('participants', [])
             
-            new_participant = {"userid": user_id, "team_type": match.get('team_type', 'SOLO'), "players": players_data}
-            # Saving by UserID key prevents array issues in Firebase
-            db.reference(f'matches/{mid}/participants/{user_id}').set(new_participant)
+            merged = False
+            # --- RANDOM FILLING LOGIC ---
+            if is_random:
+                if isinstance(participants, list):
+                    for p in participants:
+                        if p and len(p.get('players', [])) + player_count <= max_size:
+                            p['players'].extend(players_data)
+                            merged = True
+                            break
+                elif isinstance(participants, dict):
+                    for p in participants.values():
+                        if p and len(p.get('players', [])) + player_count <= max_size:
+                            p['players'].extend(players_data)
+                            merged = True
+                            break
+            if not merged:
+                new_team = {
+                    "userid": user_id, 
+                    "team_type": team_type, 
+                    "players": players_data
+                }
+                if isinstance(participants, list):
+                    participants.append(new_team)
+                elif isinstance(participants, dict):
+                    participants[user_id] = new_team
+                else:
+                    participants = [new_team]
+
+            db.reference(f'matches/{mid}/participants').set(participants)
             
-            flash("Joined Successfully!", "success"); return redirect(url_for('matches_list', m_type='joined'))
+            if merged:
+                flash("Joined & Merged with a Team!", "success")
+            else:
+                flash("Joined Successfully!", "success")
+
+            return redirect(url_for('matches_list', m_type='joined'))
         else:
             flash("Insufficient Balance or Transaction Error.", "danger"); return redirect(url_for('join_match', mid=mid))
 
@@ -573,6 +581,7 @@ def edit_profile(field):
     template_map = {'name': 'myprofile/editname.html', 'email': 'myprofile/editemail.html', 'phone': 'myprofile/editphone.html', 'password': 'myprofile/editpassword.html'}
     return render_template(template_map.get(field), user=current_user())
 
+# --- FEATURE 2: Secure Proof Upload with Password ---
 @app.route('/upload_proof', methods=['GET', 'POST'])
 @limiter.limit("10 per hour")
 def upload_proof():
