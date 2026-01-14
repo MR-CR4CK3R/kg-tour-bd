@@ -97,10 +97,9 @@ def current_user():
 def generate_otp():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
-# --- NEW HELPER FUNCTION FOR CONSISTENT COUNTING ---
+# --- HELPER FUNCTION FOR CONSISTENT COUNTING ---
 def get_match_player_count(m):
     count = 0
-    # Priority 1: Check participants (Detailed team data)
     if 'participants' in m:
         participants = m['participants']
         if isinstance(participants, list):
@@ -110,7 +109,6 @@ def get_match_player_count(m):
              for p in participants.values():
                  if p: count += len(p.get('players', []))
     
-    # Priority 2: Fallback to 'joined' list if participants count is 0
     if count == 0 and 'joined' in m:
         joined = m['joined']
         if isinstance(joined, list): count = len(joined)
@@ -208,10 +206,8 @@ def auth():
         elif action == 'forgot_init':
             identifier = request.form.get('identifier', '').strip()
             users = get_db('users') or {}
-            
             target_user = None
             target_uid = None
-            
             for uid, u in users.items():
                 if str(u.get('phone')) == identifier or u.get('email') == identifier:
                     target_user = u
@@ -221,21 +217,14 @@ def auth():
             if target_user:
                 email = target_user.get('email')
                 otp = generate_otp()
-                
                 if send_email_otp(email, otp, endpoint="fpass"):
-                    session['reset_data'] = {
-                        'uid': target_uid,
-                        'otp': otp,
-                        'otp_time': time.time(),
-                        'attempts': 0
-                    }
+                    session['reset_data'] = {'uid': target_uid, 'otp': otp, 'otp_time': time.time(), 'attempts': 0}
                     flash(f"OTP sent to email ending in ***{email[-4:]}", "info")
                     return render_template('auth.html', step='forgot_verify')
                 else:
                     flash("Failed to send OTP via Email.", "danger")
             else:
                 flash("User not found or Email failed.", "danger")
-            
             return render_template('auth.html', step='forgot_init')
 
         elif action == 'forgot_verify':
@@ -244,59 +233,40 @@ def auth():
             data = session.get('reset_data')
 
             if not data:
-                flash("Session expired.", "danger")
-                return redirect(url_for('auth', step='forgot_init'))
-
+                flash("Session expired.", "danger"); return redirect(url_for('auth', step='forgot_init'))
             if time.time() - data.get('otp_time', 0) > 300:
-                session.pop('reset_data', None)
-                flash("OTP Expired.", "danger")
-                return redirect(url_for('auth', step='forgot_init'))
-
+                session.pop('reset_data', None); flash("OTP Expired.", "danger"); return redirect(url_for('auth', step='forgot_init'))
             if data.get('attempts', 0) >= 3:
-                session.pop('reset_data', None)
-                flash("Too many failed attempts.", "danger")
-                return redirect(url_for('auth', step='forgot_init'))
+                session.pop('reset_data', None); flash("Too many failed attempts.", "danger"); return redirect(url_for('auth', step='forgot_init'))
 
             if str(data['otp']) == user_otp:
                 uid = data['uid']
                 db.reference(f'users/{uid}/password').set(new_password)
                 session.pop('reset_data', None)
-                flash("Password Reset Successfully! Please Login.", "success")
-                return redirect(url_for('auth'))
+                flash("Password Reset Successfully! Please Login.", "success"); return redirect(url_for('auth'))
             else:
-                data['attempts'] += 1
-                session['reset_data'] = data
+                data['attempts'] += 1; session['reset_data'] = data
                 flash(f"Invalid OTP. Attempts left: {3 - data['attempts']}", "danger")
                 return render_template('auth.html', step='forgot_verify')
 
         elif action == 'signup_init':
             if get_db(f'used_devices/{device_id}'):
-                flash("Device Policy: Account exists.", "warning")
-                return render_template('auth.html', step='init')
-
+                flash("Device Policy: Account exists.", "warning"); return render_template('auth.html', step='init')
             existing_uid_on_ip = get_db(f'used_ips/{sanitized_ip}')
             if existing_uid_on_ip:
-                flash("Registration blocked: IP Limit reached.", "danger")
-                return redirect(url_for('auth'))
+                flash("Registration blocked: IP Limit reached.", "danger"); return redirect(url_for('auth'))
 
             name = request.form.get('name')
             phone = request.form.get('phone', '').strip()
             email = request.form.get('email', '').strip()
-            
             users = get_db('users') or {}
             for u in users.values():
                 if str(u.get('phone')) == phone or u.get('email') == email:
-                    flash("Phone or Email already registered.", "danger")
-                    return redirect(url_for('auth'))
+                    flash("Phone or Email already registered.", "danger"); return redirect(url_for('auth'))
             
             otp = generate_otp()
             if send_email_otp(email, otp, endpoint="vmail"):
-                session['signup_data'] = {
-                    'name': name, 'phone': phone, 'email': email, 
-                    'otp': otp,
-                    'otp_time': time.time(),
-                    'attempts': 0
-                }
+                session['signup_data'] = {'name': name, 'phone': phone, 'email': email, 'otp': otp, 'otp_time': time.time(), 'attempts': 0}
                 resp = make_response(render_template('auth.html', step='verify_otp'))
                 resp.set_cookie('device_id', device_id, max_age=315360000, secure=True, httponly=True)
                 return resp
@@ -305,64 +275,37 @@ def auth():
 
         elif action == 'verify_otp':
             if get_db(f'used_devices/{device_id}'):
-                 flash("Error: Device already registered.", "danger")
-                 return redirect(url_for('auth'))
-
+                 flash("Error: Device already registered.", "danger"); return redirect(url_for('auth'))
             user_otp = request.form.get('otp', '').strip()
             password = request.form.get('password')
             data = session.get('signup_data')
             
-            if not data:
-                flash("Session expired.", "danger"); return redirect(url_for('auth'))
-            
-            if time.time() - data.get('otp_time', 0) > 300:
-                session.pop('signup_data', None)
-                flash("OTP Expired.", "danger"); return redirect(url_for('auth'))
-
-            if data.get('attempts', 0) >= 3:
-                session.pop('signup_data', None)
-                flash("Too many failed attempts.", "danger"); return redirect(url_for('auth'))
+            if not data: flash("Session expired.", "danger"); return redirect(url_for('auth'))
+            if time.time() - data.get('otp_time', 0) > 300: session.pop('signup_data', None); flash("OTP Expired.", "danger"); return redirect(url_for('auth'))
+            if data.get('attempts', 0) >= 3: session.pop('signup_data', None); flash("Too many failed attempts.", "danger"); return redirect(url_for('auth'))
 
             if str(data['otp']) == user_otp:
                 new_uid = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
-                
                 new_user = {
-                    "userid": new_uid,
-                    "name": data.get('name', 'New User'),
-                    "phone": data['phone'],
-                    "email": data['email'],
-                    "password": password,
-                    "main_balance": 0.0,
-                    "winning_balance": 0.0,
-                    "role": "U",
-                    "joined_matches": [],
-                    "is_banned": False,
-                    "is_logged_in": True,
-                    "device_id": device_id,
-                    "signup_ip": user_ip
+                    "userid": new_uid, "name": data.get('name', 'New User'), "phone": data['phone'],
+                    "email": data['email'], "password": password, "main_balance": 0.0, "winning_balance": 0.0,
+                    "role": "U", "joined_matches": [], "is_banned": False, "is_logged_in": True,
+                    "device_id": device_id, "signup_ip": user_ip
                 }
-                
                 db.reference(f'users/{new_uid}').set(new_user)
                 db.reference(f'used_devices/{device_id}').set(new_uid)
                 db.reference(f'used_ips/{sanitized_ip}').set(new_uid)
-
                 if bot:
-                    try:
-                        msg = (f"👤 NEW USER\nName: {new_user['name']}\nUID: {new_uid}")
-                        bot.send_message(OWNER_ID, msg)
+                    try: bot.send_message(OWNER_ID, f"👤 NEW USER\nName: {new_user['name']}\nUID: {new_uid}")
                     except: pass
-                
                 session['user_id'] = new_uid
                 session.pop('signup_data', None)
-                
                 resp = make_response(redirect(url_for('dashboard')))
                 return resp
             else:
-                data['attempts'] += 1
-                session['signup_data'] = data
+                data['attempts'] += 1; session['signup_data'] = data
                 flash(f"Invalid OTP. Attempts left: {3 - data['attempts']}", "danger")
                 return render_template('auth.html', step='verify_otp')
-
     return render_template('auth.html', step=step)
 
 @app.route('/logout')
@@ -377,16 +320,11 @@ def logout():
 def matches_hub():
     if not is_logged_in(): return redirect(url_for('auth'))
     all_matches = get_db('matches') or {}
-    counts = {
-        'BR': 0,
-        'CS': 0,
-        'LW': 0
-    }
+    counts = {'BR': 0, 'CS': 0, 'LW': 0}
     for m in all_matches.values():
         if m.get('status') == 'upcoming':
             m_type = m.get('type', '').upper()
-            if m_type in counts:
-                counts[m_type] += 1
+            if m_type in counts: counts[m_type] += 1
     return render_template('matches.html', counts=counts)
 
 @app.route('/matches/<m_type>')
@@ -400,37 +338,32 @@ def matches_list(m_type):
     sorted_items = sorted(all_matches.items(), key=lambda x: x[1].get('time', ''), reverse=True)
     
     for mid, m in sorted_items:
-        # --- FIX: Use Consistent Counting ---
         joined_count = get_match_player_count(m)
         m['joined_count'] = joined_count
         
-        # --- FIX: Calculate Percentage for Progress Bar ---
         try:
             limit = int(m.get('limit', 1))
             if limit > 0:
                 percent = (joined_count / limit) * 100
                 if percent > 100: percent = 100
                 m['fill_percent'] = round(percent)
-            else:
-                m['fill_percent'] = 0
-        except:
-            m['fill_percent'] = 0
-        # --------------------------------------------------
+            else: m['fill_percent'] = 0
+        except: m['fill_percent'] = 0
+
+        # --- FEATURE 1: Check if user joined ---
+        joined_data = m.get('joined', [])
+        if isinstance(joined_data, dict): joined_list = list(joined_data.values())
+        elif isinstance(joined_data, list): joined_list = joined_data
+        else: joined_list = []
+        m['user_has_joined'] = user_id in joined_list
+        # ----------------------------------------
 
         if m_type == 'joined':
-            joined_list = m.get('joined', [])
-            if isinstance(joined_list, dict): joined_list = list(joined_list.values())
-            if user_id in joined_list: filtered[mid] = m
+            if m['user_has_joined']: filtered[mid] = m
         elif m.get('type') == m_type.upper() and m.get('status') == 'upcoming': 
             filtered[mid] = m
             
-    template_map = {
-        'br': 'matches/brmatches.html', 
-        'cs': 'matches/csmatches.html', 
-        'lw': 'matches/lwmatches.html',
-        'joined': 'matches/myjoinedmatch.html'
-    }
-    
+    template_map = {'br': 'matches/brmatches.html', 'cs': 'matches/csmatches.html', 'lw': 'matches/lwmatches.html', 'joined': 'matches/myjoinedmatch.html'}
     return render_template(template_map.get(m_type, 'matches.html'), matches=filtered)
 
 @app.route('/match/join/<mid>', methods=['GET', 'POST'])
@@ -448,7 +381,6 @@ def join_match(mid):
     if user_id in joined_list:
         flash("Already joined.", "warning"); return redirect(url_for('matches_list', m_type='joined'))
     
-    # --- FIX: Use Consistent Counting ---
     current_count = get_match_player_count(match)
     slots_left = match['limit'] - current_count
 
@@ -457,13 +389,8 @@ def join_match(mid):
             player_count = int(request.form.get('player_count'))
             if player_count < 1:
                 flash("Minimum 1 player required.", "danger"); return redirect(url_for('join_match', mid=mid))
-            
-            # --- VALIDATION FOR LONE WOLF ---
             if match.get('type') == 'LW' and player_count > 2:
-                flash("Lone Wolf is restricted to Solo or Duo only.", "danger")
-                return redirect(url_for('join_match', mid=mid))
-            # -------------------------------
-
+                flash("Lone Wolf is restricted to Solo or Duo only.", "danger"); return redirect(url_for('join_match', mid=mid))
         except ValueError:
             flash("Invalid number.", "danger"); return redirect(url_for('join_match', mid=mid))
 
@@ -490,15 +417,11 @@ def join_match(mid):
                 players_data.append({"game_uid": player_uids[i], "game_name": player_names[i], "added_by": user_id, "type": "fixed"})
             
             new_participant = {"userid": user_id, "team_type": match.get('team_type', 'SOLO'), "players": players_data}
-            
-            # --- FIX: Use User ID as Key to prevent Index Overwrites ---
             db.reference(f'matches/{mid}/participants/{user_id}').set(new_participant)
-            # -----------------------------------------------------------
             
             flash("Joined Successfully!", "success"); return redirect(url_for('matches_list', m_type='joined'))
         else:
-            flash("Insufficient Balance or Transaction Error.", "danger")
-            return redirect(url_for('join_match', mid=mid))
+            flash("Insufficient Balance or Transaction Error.", "danger"); return redirect(url_for('join_match', mid=mid))
 
     return render_template('matches/joinmatch.html', match=match, slots=slots_left)
 
@@ -512,14 +435,10 @@ def deposit():
     settings = get_db('settings')
     if request.method == 'POST':
         method = request.form.get('method'); sender = request.form.get('sender'); trx_id = request.form.get('trx_id')
-        
         try:
             amount = float(request.form.get('amount'))
-            if amount <= 0:
-                flash("Amount must be positive.", "danger"); return redirect(url_for('deposit'))
-        except ValueError:
-             flash("Invalid amount.", "danger"); return redirect(url_for('deposit'))
-
+            if amount <= 0: flash("Amount must be positive.", "danger"); return redirect(url_for('deposit'))
+        except ValueError: flash("Invalid amount.", "danger"); return redirect(url_for('deposit'))
         if amount < 10: flash("Minimum deposit 10.", "danger"); return redirect(url_for('deposit'))
 
         txns = get_db('transactions') or {}
@@ -529,11 +448,9 @@ def deposit():
         tid = str(uuid.uuid4())[:8]
         data = {"id": tid, "userid": session['user_id'], "type": "deposit", "method": method, "amount": amount, "sender": sender, "trx_id": trx_id, "status": "pending", "time": str(datetime.datetime.now())}
         db.reference(f'transactions/{tid}').set(data)
-
         if bot:
             try: bot.send_message(OWNER_ID, f"🔔 Deposit: {amount} by {session['user_id']}")
             except: pass
-
         flash("Deposit submitted.", "success"); return redirect(url_for('wallet'))
     return render_template('wallet/deposit.html', settings=settings)
 
@@ -545,30 +462,23 @@ def withdraw():
     user = current_user()
     if request.method == 'POST':
         method = request.form.get('method'); number = request.form.get('number')
-        
         try:
             amount = float(request.form.get('amount'))
-            if amount <= 0:
-                 flash("Amount must be positive.", "danger"); return redirect(url_for('withdraw'))
-        except ValueError:
-            flash("Invalid amount.", "danger"); return redirect(url_for('withdraw'))
+            if amount <= 0: flash("Amount must be positive.", "danger"); return redirect(url_for('withdraw'))
+        except ValueError: flash("Invalid amount.", "danger"); return redirect(url_for('withdraw'))
 
         min_wd = float(settings.get('min_withdraw', 100))
-        
         if amount < min_wd: flash(f"Min withdraw {min_wd}", "danger")
         elif user['winning_balance'] < amount: flash("Insufficient Winning Balance", "danger")
         else:
             new_bal = user['winning_balance'] - amount
             db.reference(f'users/{session["user_id"]}/winning_balance').set(new_bal)
-            
             tid = str(uuid.uuid4())[:8]
             data = {"id": tid, "userid": session['user_id'], "type": "withdraw", "method": method, "amount": amount, "number": number, "status": "pending", "time": str(datetime.datetime.now())}
             db.reference(f'transactions/{tid}').set(data)
-
             if bot:
                 try: bot.send_message(OWNER_ID, f"🔔 Withdraw: {amount} by {session['user_id']}")
                 except: pass
-
             flash("Withdraw submitted.", "success"); return redirect(url_for('wallet'))
     return render_template('wallet/withdraw.html', settings=settings, user=user)
 
@@ -579,10 +489,8 @@ def convert():
     if request.method == 'POST':
         try:
             amount = float(request.form.get('amount'))
-            if amount <= 0:
-                flash("Amount must be positive.", "danger"); return redirect(url_for('wallet'))
-        except ValueError:
-            flash("Invalid amount.", "danger"); return redirect(url_for('wallet'))
+            if amount <= 0: flash("Amount must be positive.", "danger"); return redirect(url_for('wallet'))
+        except ValueError: flash("Invalid amount.", "danger"); return redirect(url_for('wallet'))
 
         if user['winning_balance'] >= amount:
             db.reference(f'users/{session["user_id"]}').update({
@@ -611,57 +519,67 @@ def edit_profile(field):
     if not is_logged_in(): return redirect(url_for('auth'))
     uid = session['user_id']
     ALLOWED_FIELDS = ['name', 'email', 'phone', 'password']
-    
-    if field not in ALLOWED_FIELDS:
-        flash("Invalid field.", "danger"); return redirect(url_for('profile'))
+    if field not in ALLOWED_FIELDS: flash("Invalid field.", "danger"); return redirect(url_for('profile'))
     
     if request.method == 'POST':
         value = request.form.get('value', '').strip()
-        
         if field in ['email', 'phone']:
             users = get_db('users') or {}
             for other_uid, u in users.items():
                 if other_uid != uid and str(u.get(field)) == value:
                     flash(f"{field} taken.", "danger"); return redirect(url_for('edit_profile', field=field))
-
         if field == 'password':
             old_pass = request.form.get('old_password')
             user = current_user()
             if not user or user.get('password') != old_pass: 
-                flash("Wrong old password.", "danger")
-                return redirect(url_for('edit_profile', field=field))
+                flash("Wrong old password.", "danger"); return redirect(url_for('edit_profile', field=field))
             db.reference(f'users/{uid}/password').set(value)
         else: 
             db.reference(f'users/{uid}/{field}').set(value)
-            
-        flash("Updated.", "success")
-        return redirect(url_for('profile'))
+        flash("Updated.", "success"); return redirect(url_for('profile'))
         
     template_map = {'name': 'myprofile/editname.html', 'email': 'myprofile/editemail.html', 'phone': 'myprofile/editphone.html', 'password': 'myprofile/editpassword.html'}
     return render_template(template_map.get(field), user=current_user())
 
+# --- FEATURE 2: Secure Proof Upload with Password ---
 @app.route('/upload_proof', methods=['GET', 'POST'])
 @limiter.limit("10 per hour")
 def upload_proof():
     if not is_logged_in(): return redirect(url_for('auth'))
+    
     if request.method == 'POST':
-        mid = request.form.get('match_id')
-        rid = request.form.get('room_id')
+        mid = request.form.get('match_id').strip()
+        rid = request.form.get('room_id').strip()
+        r_pass = request.form.get('room_pass').strip()
         file = request.files.get('proof_image')
         
-        if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            if bot:
-                caption = f"📸 PROOF\nUser: {session['user_id']}\nMatch: {mid}\nRoom: {rid}"
-                try: bot.send_photo(OWNER_ID, file.read(), caption=caption); flash("Proof sent.", "success")
-                except Exception as e: flash(f"Error: {e}", "danger")
-            else:
-                 flash("Bot not configured.", "warning")
-        else:
-            flash("Invalid file type (png, jpg only).", "danger")
+        match = get_db(f'matches/{mid}')
+        if not match:
+            flash("❌ Invalid Match ID.", "danger"); return redirect(url_for('upload_proof'))
 
+        user_id = session['user_id']
+        joined_data = match.get('joined', [])
+        if isinstance(joined_data, dict): joined_list = list(joined_data.values())
+        elif isinstance(joined_data, list): joined_list = joined_data
+        else: joined_list = []
+
+        if user_id not in joined_list:
+            flash("⚠️ Security Alert: You have NOT joined this match.", "danger")
+            return redirect(url_for('upload_proof'))
+
+        if file and allowed_file(file.filename):
+            try:
+                if bot:
+                    caption = f"📸 PROOF\nUser: `{user_id}`\nMatch: `{mid}`\nRoom: `{rid}`\nPass: `{r_pass}`"
+                    bot.send_photo(OWNER_ID, file.read(), caption=caption, parse_mode="Markdown")
+                    flash("✅ Proof submitted successfully!", "success")
+                else: flash("Bot not active.", "warning")
+            except Exception as e: flash(f"Error: {e}", "danger")
+        else: flash("Invalid file type.", "danger")
         return redirect(url_for('dashboard'))
+        
     return render_template('uploadproof.html')
+# ----------------------------------------------------
 
 @app.route('/uid_lookup')
 @limiter.limit("20 per hour")
