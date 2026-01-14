@@ -23,7 +23,7 @@ csrf = CSRFProtect(app)
 
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'   
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'    
 app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(minutes=30) 
 
 limiter = Limiter(
@@ -44,6 +44,7 @@ def allowed_file(filename):
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 OWNER_ID = int(os.environ.get("OWNER_ID", 7480892660))
 
+# API URL
 EMAIL_API_URL = "https://khelo-gamers.vercel.app/api/"
 FIREBASE_DB_URL = "https://khelo-gamers-of-bd-default-rtdb.asia-southeast1.firebasedatabase.app/"
 
@@ -94,12 +95,15 @@ def current_user():
     return users.get(session['user_id'])
 
 def generate_otp():
-    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
-def send_email_otp(email, otp):
+# --- UPDATED EMAIL FUNCTION ---
+# This function now accepts an 'endpoint' argument to switch between 'vmail' and 'fpass'
+def send_email_otp(email, otp, endpoint="vmail"):
     try:
         headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
-        response = requests.get(f"{EMAIL_API_URL}vmail?to={email}&otp={otp}", headers=headers, timeout=10)
+        # endpoint will be 'vmail' for signup, 'fpass' for forgot password
+        response = requests.get(f"{EMAIL_API_URL}{endpoint}?to={email}&otp={otp}", headers=headers, timeout=10)
         return response.status_code == 200 and response.json().get("status") == "success"
     except:
         return False
@@ -152,9 +156,12 @@ def auth():
     if not device_id:
         device_id = str(uuid.uuid4())
 
+    step = request.args.get('step', 'init')
+
     if request.method == 'POST':
         action = request.form.get('action')
         
+        # --- LOGIN ---
         if action == 'login':
             login_id = request.form.get('login_id', '').strip()
             password = request.form.get('password', '').strip()
@@ -180,6 +187,74 @@ def auth():
             else:
                 flash("Invalid ID or Password", "danger")
 
+        # --- FORGOT PASSWORD INIT (Uses 'fpass' endpoint) ---
+        elif action == 'forgot_init':
+            identifier = request.form.get('identifier', '').strip()
+            users = get_db('users') or {}
+            
+            target_user = None
+            target_uid = None
+            
+            for uid, u in users.items():
+                if str(u.get('phone')) == identifier or u.get('email') == identifier:
+                    target_user = u
+                    target_uid = uid
+                    break
+            
+            if target_user:
+                email = target_user.get('email')
+                otp = generate_otp()
+                
+                # Using 'fpass' endpoint here
+                if send_email_otp(email, otp, endpoint="fpass"):
+                    session['reset_data'] = {
+                        'uid': target_uid,
+                        'otp': otp,
+                        'otp_time': time.time(),
+                        'attempts': 0
+                    }
+                    flash(f"OTP sent to email ending in ***{email[-4:]}", "info")
+                    return render_template('auth.html', step='forgot_verify')
+                else:
+                    flash("Failed to send OTP via Email.", "danger")
+            else:
+                flash("User not found or Email failed.", "danger")
+            
+            return render_template('auth.html', step='forgot_init')
+
+        # --- FORGOT PASSWORD VERIFY ---
+        elif action == 'forgot_verify':
+            user_otp = request.form.get('otp', '').strip()
+            new_password = request.form.get('new_password', '').strip()
+            data = session.get('reset_data')
+
+            if not data:
+                flash("Session expired.", "danger")
+                return redirect(url_for('auth', step='forgot_init'))
+
+            if time.time() - data.get('otp_time', 0) > 300:
+                session.pop('reset_data', None)
+                flash("OTP Expired.", "danger")
+                return redirect(url_for('auth', step='forgot_init'))
+
+            if data.get('attempts', 0) >= 3:
+                session.pop('reset_data', None)
+                flash("Too many failed attempts.", "danger")
+                return redirect(url_for('auth', step='forgot_init'))
+
+            if str(data['otp']) == user_otp:
+                uid = data['uid']
+                db.reference(f'users/{uid}/password').set(new_password)
+                session.pop('reset_data', None)
+                flash("Password Reset Successfully! Please Login.", "success")
+                return redirect(url_for('auth'))
+            else:
+                data['attempts'] += 1
+                session['reset_data'] = data
+                flash(f"Invalid OTP. Attempts left: {3 - data['attempts']}", "danger")
+                return render_template('auth.html', step='forgot_verify')
+
+        # --- SIGNUP INIT (Uses 'vmail' endpoint) ---
         elif action == 'signup_init':
             if get_db(f'used_devices/{device_id}'):
                 flash("Device Policy: Account exists.", "warning")
@@ -201,7 +276,8 @@ def auth():
                     return redirect(url_for('auth'))
             
             otp = generate_otp()
-            if send_email_otp(email, otp):
+            # Using default 'vmail' endpoint here
+            if send_email_otp(email, otp, endpoint="vmail"):
                 session['signup_data'] = {
                     'name': name, 'phone': phone, 'email': email, 
                     'otp': otp,
@@ -214,6 +290,7 @@ def auth():
             else:
                 flash("Failed to send OTP.", "danger")
 
+        # --- SIGNUP VERIFY ---
         elif action == 'verify_otp':
             if get_db(f'used_devices/{device_id}'):
                  flash("Error: Device already registered.", "danger")
@@ -274,7 +351,7 @@ def auth():
                 flash(f"Invalid OTP. Attempts left: {3 - data['attempts']}", "danger")
                 return render_template('auth.html', step='verify_otp')
 
-    return render_template('auth.html', step='init')
+    return render_template('auth.html', step=step)
 
 @app.route('/logout')
 def logout():
@@ -297,15 +374,12 @@ def matches_list(m_type):
     filtered = {}
     user_id = session['user_id']
     
-    # Sort matches by time
     sorted_items = sorted(all_matches.items(), key=lambda x: x[1].get('time', ''), reverse=True)
     
     for mid, m in sorted_items:
-        # --- নতুন কোড অংশ শুরু (Slot Calculation) ---
         current_count = 0
         participants = m.get('participants', [])
         
-        # Firebase list/dict হ্যান্ডেল করা
         if isinstance(participants, list):
             for p in participants: 
                 if p: current_count += len(p.get('players', []))
@@ -313,9 +387,7 @@ def matches_list(m_type):
             for p in participants.values(): 
                 if p: current_count += len(p.get('players', []))
         
-        # এই সংখ্যাটি ম্যাচের তথ্যের সাথে যুক্ত করে দিচ্ছি
         m['filled_slots'] = current_count
-        # --- নতুন কোড অংশ শেষ ---
 
         if m_type == 'joined':
             joined_list = m.get('joined', [])
@@ -591,4 +663,3 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
-
