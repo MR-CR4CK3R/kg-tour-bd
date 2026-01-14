@@ -19,19 +19,20 @@
                 <div class="col-6"><i class="fas fa-clock"></i> {{ m.time }}</div>
                 <div class="col-6 text-end">
                     <i class="fas fa-users"></i> 
-                    {{ m.joined_count|default(0) }}/{{ m.limit }} Filled
+                    {{ m.joined_count }}/{{ m.limit }} Filled
                 </div>
                 <div class="col-12 mt-1"><i class="fas fa-skull"></i> Per Kill: ৳ {{ m.per_kill }}</div>
             </div>
 
             <div class="progress mb-3" style="height: 8px; background-color: #343a40;">
                 <div class="progress-bar bg-warning" role="progressbar" 
-                     style="width: {{ (m.joined_count|default(0) / m.limit * 100) }}%;" 
-                     aria-valuenow="{{ m.joined_count|default(0) }}" 
+                     style="width: {{ m.fill_percent }}%;" 
+                     aria-valuenow="{{ m.fill_percent }}" 
                      aria-valuemin="0" 
-                     aria-valuemax="{{ m.limit }}">
+                     aria-valuemax="100">
                 </div>
             </div>
+
             <div class="alert alert-dark p-2 small mb-3">
                 <div class="d-flex justify-content-between">
                     <span>🥇 1st: ৳ {{ m.prize_1 }}</span>
@@ -40,7 +41,7 @@
                 </div>
             </div>
             
-            {% if m.joined_count|default(0) >= m.limit %}
+            {% if m.joined_count >= m.limit %}
                 <button class="btn btn-secondary w-100" disabled>SQUAD FULL</button>
             {% else %}
                 <a href="{{ url_for('join_match', mid=mid) }}" class="btn btn-neon w-100">JOIN SQUAD</a>
