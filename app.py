@@ -73,7 +73,21 @@ if not firebase_admin._apps:
             print("Error: Firebase credentials missing.")
     except Exception as e:
         print(f"Firebase Init Error: {e}")
+
 # --- HELPER FUNCTIONS ---
+
+def sanitize_text(text):
+    """
+    Replaces restricted characters with hyphen (-).
+    Target chars: * _ [ ` ,
+    """
+    if not text:
+        return ""
+    forbidden_chars = ["*", "_", "[", "`", ","]
+    for char in forbidden_chars:
+        text = text.replace(char, "-")
+    return text
+
 def get_db(path):
     try:
         return db.reference(path).get()
@@ -248,7 +262,8 @@ def auth():
             if existing_uid_on_ip:
                 flash("Registration blocked: IP Limit reached.", "danger"); return redirect(url_for('auth'))
 
-            name = request.form.get('name')
+            # --- SANITIZE NAME INPUT ---
+            name = sanitize_text(request.form.get('name'))
             phone = request.form.get('phone', '').strip()
             email = request.form.get('email', '').strip()
             users = get_db('users') or {}
@@ -411,9 +426,13 @@ def join_match(mid):
             
             players_data = []
             for i in range(player_count):
+                # --- SANITIZE PLAYER INFO ---
+                clean_name = sanitize_text(player_names[i])
+                clean_uid = sanitize_text(player_uids[i])
+                
                 players_data.append({
-                    "game_uid": player_uids[i], 
-                    "game_name": player_names[i], 
+                    "game_uid": clean_uid, 
+                    "game_name": clean_name, 
                     "added_by": user_id, 
                     "type": "random" if is_random else "fixed"
                 })
@@ -469,7 +488,9 @@ def deposit():
     if not is_logged_in(): return redirect(url_for('auth'))
     settings = get_db('settings')
     if request.method == 'POST':
-        method = request.form.get('method'); sender = request.form.get('sender'); trx_id = request.form.get('trx_id')
+        method = sanitize_text(request.form.get('method'))
+        sender = sanitize_text(request.form.get('sender'))
+        trx_id = sanitize_text(request.form.get('trx_id')) # Sanitizing Transaction ID as well
         try:
             amount = float(request.form.get('amount'))
             if amount <= 0: flash("Amount must be positive.", "danger"); return redirect(url_for('deposit'))
@@ -496,7 +517,8 @@ def withdraw():
     settings = get_db('settings')
     user = current_user()
     if request.method == 'POST':
-        method = request.form.get('method'); number = request.form.get('number')
+        method = sanitize_text(request.form.get('method'))
+        number = sanitize_text(request.form.get('number'))
         try:
             amount = float(request.form.get('amount'))
             if amount <= 0: flash("Amount must be positive.", "danger"); return redirect(url_for('withdraw'))
@@ -562,7 +584,14 @@ def edit_profile(field):
     if field not in ALLOWED_FIELDS: flash("Invalid field.", "danger"); return redirect(url_for('profile'))
     
     if request.method == 'POST':
-        value = request.form.get('value', '').strip()
+        raw_value = request.form.get('value', '').strip()
+        
+        # --- SANITIZE NAME IN PROFILE EDIT ---
+        if field == 'name':
+            value = sanitize_text(raw_value)
+        else:
+            value = raw_value
+
         if field in ['email', 'phone']:
             users = get_db('users') or {}
             for other_uid, u in users.items():
@@ -589,8 +618,11 @@ def upload_proof():
     
     if request.method == 'POST':
         mid = request.form.get('match_id', '').strip()
-        rid = request.form.get('room_id', '').strip()
-        r_pass = request.form.get('room_pass', '').strip()
+        
+        # --- SANITIZE PROOF INPUTS ---
+        rid = sanitize_text(request.form.get('room_id', '').strip())
+        r_pass = sanitize_text(request.form.get('room_pass', '').strip())
+        
         file = request.files.get('proof_image')
         
         match = get_db(f'matches/{mid}')
