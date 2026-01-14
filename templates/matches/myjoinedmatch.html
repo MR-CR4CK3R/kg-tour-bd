@@ -21,29 +21,47 @@
             
             <div class="bg-dark rounded p-2 mb-3 border border-secondary">
                 <h6 class="text-neon-p small mb-2"><i class="fas fa-users"></i> MY TEAM</h6>
-                <ul class="list-unstyled mb-0 small text-light">
-                    {% set ns = namespace(found=false) %}
+                
+                {# --- TEAM LOGIC START --- #}
+                {% set ns = namespace(found=false) %}
+                
+                {# Participants List বা Dict হ্যান্ডেল করা #}
+                {% if m.participants %}
+                    {% set participant_list = m.participants.values() if m.participants is mapping else m.participants %}
                     
-                    {# --- FIX START: List এবং Dict দুটোই হ্যান্ডেল করার লজিক --- #}
-                    {% if m.participants %}
-                        {% set participant_list = m.participants.values() if m.participants is mapping else m.participants %}
+                    {% for p in participant_list if p %}
+                        {% set ns.found = false %}
                         
-                        {% for p in participant_list if p %}
-                            {% set player_found = false %}
-                            
-                            {# চেক করা হচ্ছে ইউজার এই টিমে আছে কি না #}
-                            {% for plr in p.players %}
-                                {% if plr.added_by|string == session['user_id']|string or plr.game_uid|string == session['user_id']|string %}
-                                    {% set ns.found = true %}
-                                {% endif %}
-                            {% endfor %}
+                        {# চেক করা হচ্ছে ইউজার এই টিমে আছে কি না #}
+                        {% for plr in p.players %}
+                            {# যদি প্লেয়ারের UID বা Added By বর্তমান ইউজারের সমান হয় #}
+                            {% if plr.added_by|string == session['user_id']|string or plr.game_uid|string == session['user_id']|string %}
+                                {% set ns.found = true %}
+                            {% endif %}
+                        {% endfor %}
 
-                            {# যদি টিমে পাওয়া যায়, তবে সব প্লেয়ার দেখাও #}
-                            {% if ns.found %}
+                        {# যদি ইউজার এই টিমে থাকে, তবে এই ব্লকটি দেখাবে #}
+                        {% if ns.found %}
+                        
+                            {# --- CAPTAIN ID SHOWCASE (NEW FEATURE) --- #}
+                            <div class="d-flex align-items-center justify-content-between bg-dark border border-warning rounded p-2 mb-2">
+                                <div>
+                                    <span class="text-warning mr-2"><i class="fas fa-crown"></i> CAPTAIN ID:</span>
+                                </div>
+                                <div>
+                                    <span class="text-white font-monospace fw-bold user-select-all">{{ p.userid }}</span>
+                                    {% if p.userid|string == session['user_id']|string %}
+                                        <span class="badge bg-success ms-1" style="font-size: 0.7em;">YOU</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {# ----------------------------------------- #}
+
+                            <ul class="list-unstyled mb-0 small text-light">
                                 {% for plr in p.players %}
                                 <li class="d-flex justify-content-between border-bottom border-secondary py-2">
                                     <div>
-                                        <span class="text-secondary fw-bold" style="font-size: 0.8em;">Name:</span>
+                                        <span class="text-secondary fw-bold" style="font-size: 0.8em;">Player:</span>
                                         <span class="text-neon fw-bold ms-1">{{ plr.game_name }}</span>
                                     </div>
                                     <div class="text-end">
@@ -52,12 +70,11 @@
                                     </div>
                                 </li>
                                 {% endfor %}
-                                {% set ns.found = false %} {# লুপ ব্রেক করা #}
-                            {% endif %}
-                        {% endfor %}
-                    {% endif %}
-                    {# --- FIX END --- #}
-                </ul>
+                            </ul>
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+                {# --- TEAM LOGIC END --- #}
             </div>
 
             {% if m.status == 'matching' or (m.room_id and m.room_pass and m.status != 'completed') %}
