@@ -16,21 +16,21 @@ from telebot import TeleBot
 
 app = Flask(__name__)
 
-app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024 
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "fallback_local_key_change_in_prod") 
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "fallback_local_key_change_in_prod")
 
 csrf = CSRFProtect(app)
 
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'    
-app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(minutes=30) 
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(minutes=30)
 
 limiter = Limiter(
     get_remote_address,
     app=app,
     default_limits=["2000 per day", "500 per hour"],
-    storage_uri=os.environ.get("REDIS_URL", "memory://"), 
+    storage_uri=os.environ.get("REDIS_URL", "memory://"),
     storage_options={"socket_connect_timeout": 30},
     strategy="fixed-window"
 )
@@ -97,8 +97,7 @@ def current_user():
 def generate_otp():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
-# --- UPDATED EMAIL FUNCTION ---
-# This function now accepts an 'endpoint' argument to switch between 'vmail' and 'fpass'
+# --- EMAIL FUNCTION ---
 def send_email_otp(email, otp, endpoint="vmail"):
     try:
         headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
@@ -187,7 +186,7 @@ def auth():
             else:
                 flash("Invalid ID or Password", "danger")
 
-        # --- FORGOT PASSWORD INIT (Uses 'fpass' endpoint) ---
+        # --- FORGOT PASSWORD INIT ---
         elif action == 'forgot_init':
             identifier = request.form.get('identifier', '').strip()
             users = get_db('users') or {}
@@ -205,7 +204,6 @@ def auth():
                 email = target_user.get('email')
                 otp = generate_otp()
                 
-                # Using 'fpass' endpoint here
                 if send_email_otp(email, otp, endpoint="fpass"):
                     session['reset_data'] = {
                         'uid': target_uid,
@@ -254,7 +252,7 @@ def auth():
                 flash(f"Invalid OTP. Attempts left: {3 - data['attempts']}", "danger")
                 return render_template('auth.html', step='forgot_verify')
 
-        # --- SIGNUP INIT (Uses 'vmail' endpoint) ---
+        # --- SIGNUP INIT ---
         elif action == 'signup_init':
             if get_db(f'used_devices/{device_id}'):
                 flash("Device Policy: Account exists.", "warning")
@@ -276,7 +274,6 @@ def auth():
                     return redirect(url_for('auth'))
             
             otp = generate_otp()
-            # Using default 'vmail' endpoint here
             if send_email_otp(email, otp, endpoint="vmail"):
                 session['signup_data'] = {
                     'name': name, 'phone': phone, 'email': email, 
@@ -396,7 +393,14 @@ def matches_list(m_type):
         elif m.get('type') == m_type.upper() and m.get('status') == 'upcoming': 
             filtered[mid] = m
             
-    template_map = {'br': 'matches/brmatches.html', 'cs': 'matches/csmatches.html', 'joined': 'matches/myjoinedmatch.html'}
+    # --- UPDATED TEMPLATE MAP FOR LONE WOLF (LW) ---
+    template_map = {
+        'br': 'matches/brmatches.html', 
+        'cs': 'matches/csmatches.html', 
+        'lw': 'matches/lwmatches.html', # Added LW here
+        'joined': 'matches/myjoinedmatch.html'
+    }
+    
     return render_template(template_map.get(m_type, 'matches.html'), matches=filtered)
 
 @app.route('/match/join/<mid>', methods=['GET', 'POST'])
@@ -429,6 +433,13 @@ def join_match(mid):
             player_count = int(request.form.get('player_count'))
             if player_count < 1:
                 flash("Minimum 1 player required.", "danger"); return redirect(url_for('join_match', mid=mid))
+            
+            # --- VALIDATION FOR LONE WOLF ---
+            if match.get('type') == 'LW' and player_count > 2:
+                flash("Lone Wolf is restricted to Solo or Duo only.", "danger")
+                return redirect(url_for('join_match', mid=mid))
+            # -------------------------------
+
         except ValueError:
             flash("Invalid number.", "danger"); return redirect(url_for('join_match', mid=mid))
 
@@ -651,6 +662,7 @@ def rules_hub(): return render_template('rules.html')
 @app.route('/rules/<rtype>')
 def rules_detail(rtype):
     rules_data = get_db('rules') or {}
+    # Handles lwrules.html automatically based on rtype='lw'
     return render_template(f'rules/{rtype}rules.html', content=rules_data.get(rtype.upper(), "No rules set."))
 
 @app.route('/support')
