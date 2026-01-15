@@ -17,7 +17,7 @@ from telebot import TeleBot
 app = Flask(__name__)
 
 # --- CONFIGURATION ---
-app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB Upload Limit
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "fallback_local_key_change_in_prod")
 csrf = CSRFProtect(app)
 app.config['SESSION_COOKIE_SECURE'] = True
@@ -33,18 +33,15 @@ limiter = Limiter(
     storage_options={"socket_connect_timeout": 30},
     strategy="fixed-window"
 )
-
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 OWNER_ID = int(os.environ.get("OWNER_ID", 7480892660))
 EMAIL_API_URL = "https://khelo-gamers.vercel.app/api/"
 FIREBASE_DB_URL = "https://khelo-gamers-of-bd-default-rtdb.asia-southeast1.firebasedatabase.app/"
-
 bot = TeleBot(TOKEN) if TOKEN else None
 
 # --- FIREBASE INIT ---
@@ -77,10 +74,6 @@ if not firebase_admin._apps:
 # --- HELPER FUNCTIONS ---
 
 def sanitize_text(text):
-    """
-    Replaces restricted characters with hyphen (-).
-    Target chars: * _ [ ` ,
-    """
     if not text:
         return ""
     forbidden_chars = ["*", "_", "[", "`", ","]
@@ -106,10 +99,8 @@ def current_user():
 def generate_otp():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
-# Unified logic to count players safely (Handles both List and Dict)
 def get_match_player_count(m):
     count = 0
-    # Priority 1: Check participants
     if 'participants' in m:
         participants = m['participants']
         if isinstance(participants, list):
@@ -119,12 +110,10 @@ def get_match_player_count(m):
              for p in participants.values():
                  if p: count += len(p.get('players', []))
     
-    # Priority 2: Fallback to 'joined' list
     if count == 0 and 'joined' in m:
         joined = m['joined']
         if isinstance(joined, list): count = len(joined)
         elif isinstance(joined, dict): count = len(joined)
-    
     return count
 
 def send_email_otp(email, otp, endpoint="vmail"):
@@ -137,7 +126,6 @@ def send_email_otp(email, otp, endpoint="vmail"):
 
 def deduct_balance_atomic(user_uid, amount):
     user_ref = db.reference(f'users/{user_uid}/main_balance')
-    
     def transaction_func(current_balance):
         if current_balance is None:
             return None
@@ -146,7 +134,6 @@ def deduct_balance_atomic(user_uid, amount):
             return current_balance - amount
         else:
             raise ValueError("Insufficient Balance")
-
     try:
         user_ref.transaction(transaction_func)
         return True
@@ -172,7 +159,7 @@ def dashboard():
     return render_template('dashboard.html', user=user)
 
 @app.route('/auth', methods=['GET', 'POST'])
-@limiter.limit("10 per minute")
+@limiter.limit("5 per minute")
 def auth():
     if request.headers.getlist("X-Forwarded-For"):
         user_ip = request.headers.getlist("X-Forwarded-For")[0]
@@ -261,8 +248,6 @@ def auth():
             existing_uid_on_ip = get_db(f'used_ips/{sanitized_ip}')
             if existing_uid_on_ip:
                 flash("Registration blocked: IP Limit reached.", "danger"); return redirect(url_for('auth'))
-
-            # --- SANITIZE NAME INPUT ---
             name = sanitize_text(request.form.get('name'))
             phone = request.form.get('phone', '').strip()
             email = request.form.get('email', '').strip()
@@ -367,14 +352,11 @@ def matches_list(m_type):
         if isinstance(joined_data, dict): joined_list = list(joined_data.values())
         elif isinstance(joined_data, list): joined_list = joined_data
         else: joined_list = []
-        
         m['user_has_joined'] = user_id in joined_list
-
         if m_type == 'joined':
             if m['user_has_joined']: filtered[mid] = m
         elif m.get('type') == m_type.upper() and m.get('status') == 'upcoming': 
             filtered[mid] = m
-            
     template_map = {'br': 'matches/brmatches.html', 'cs': 'matches/csmatches.html', 'lw': 'matches/lwmatches.html', 'joined': 'matches/myjoinedmatch.html'}
     return render_template(template_map.get(m_type, 'matches.html'), matches=filtered)
 
@@ -384,14 +366,11 @@ def join_match(mid):
     if not is_logged_in(): return redirect(url_for('auth'))
     user_id = session['user_id']
     match = get_db(f'matches/{mid}')
-    
     if not match or match['status'] != 'upcoming':
         flash("Match unavailable.", "danger"); return redirect(url_for('matches_hub'))
-    
     joined_list = match.get('joined', [])
     if isinstance(joined_list, dict): joined_list = list(joined_list.values())
     elif not isinstance(joined_list, list): joined_list = []
-
     if user_id in joined_list:
         flash("Already joined.", "warning"); return redirect(url_for('matches_list', m_type='joined'))
     current_count = get_match_player_count(match)
@@ -405,13 +384,11 @@ def join_match(mid):
                 flash("Lone Wolf is restricted to Solo or Duo only.", "danger"); return redirect(url_for('join_match', mid=mid))
         except ValueError:
             flash("Invalid number.", "danger"); return redirect(url_for('join_match', mid=mid))
-
         player_names = request.form.getlist('player_name[]')
         player_uids = request.form.getlist('player_uid[]')
         total_fee = match['fee'] * player_count
         if player_count > slots_left:
              flash("Not enough slots.", "danger"); return redirect(url_for('join_match', mid=mid))
-        
         if deduct_balance_atomic(user_id, total_fee):
             joined_list.append(user_id)
             db.reference(f'matches/{mid}/joined').set(joined_list)
@@ -423,13 +400,10 @@ def join_match(mid):
             team_type = match.get('team_type', 'SOLO')
             max_size = 4 if team_type == 'SQUAD' else 3 if team_type == 'TRIO' else 2 if team_type == 'DUO' else 1
             is_random = (player_count < max_size)
-            
             players_data = []
             for i in range(player_count):
-                # --- SANITIZE PLAYER INFO ---
                 clean_name = sanitize_text(player_names[i])
                 clean_uid = sanitize_text(player_uids[i])
-                
                 players_data.append({
                     "game_uid": clean_uid, 
                     "game_name": clean_name, 
@@ -437,7 +411,6 @@ def join_match(mid):
                     "type": "random" if is_random else "fixed"
                 })
             participants = match.get('participants', [])
-            
             merged = False
             # --- RANDOM FILLING LOGIC ---
             if is_random:
@@ -465,18 +438,14 @@ def join_match(mid):
                     participants[user_id] = new_team
                 else:
                     participants = [new_team]
-
             db.reference(f'matches/{mid}/participants').set(participants)
-            
             if merged:
                 flash("Joined & Merged with a Team!", "success")
             else:
                 flash("Joined Successfully!", "success")
-
             return redirect(url_for('matches_list', m_type='joined'))
         else:
             flash("Insufficient Balance or Transaction Error.", "danger"); return redirect(url_for('join_match', mid=mid))
-
     return render_template('matches/joinmatch.html', match=match, slots=slots_left)
 
 @app.route('/wallet')
@@ -562,11 +531,8 @@ def convert():
 def transactions():
     if not is_logged_in(): return redirect(url_for('auth'))
     all_txns = get_db('transactions') or {}
-    
-    # Safe List handling
     if isinstance(all_txns, list):
         all_txns = {str(k): v for k, v in enumerate(all_txns) if v is not None}
-        
     uid = session['user_id']
     my_txns = [t for t in all_txns.values() if t and str(t.get('userid')) == str(uid)]
     my_txns.sort(key=lambda x: x['time'], reverse=True)
@@ -576,16 +542,14 @@ def transactions():
 def profile(): return render_template('myprofile.html', user=current_user())
 
 @app.route('/profile/edit/<field>', methods=['GET', 'POST'])
-@limiter.limit("10 per hour")
+@limiter.limit("5 per hour")
 def edit_profile(field):
     if not is_logged_in(): return redirect(url_for('auth'))
     uid = session['user_id']
     ALLOWED_FIELDS = ['name', 'email', 'phone', 'password']
     if field not in ALLOWED_FIELDS: flash("Invalid field.", "danger"); return redirect(url_for('profile'))
-    
     if request.method == 'POST':
         raw_value = request.form.get('value', '').strip()
-        
         # --- SANITIZE NAME IN PROFILE EDIT ---
         if field == 'name':
             value = sanitize_text(raw_value)
@@ -612,19 +576,15 @@ def edit_profile(field):
 
 # --- FEATURE 2: Secure Proof Upload with Password ---
 @app.route('/upload_proof', methods=['GET', 'POST'])
-@limiter.limit("10 per hour")
+@limiter.limit("5 per hour")
 def upload_proof():
     if not is_logged_in(): return redirect(url_for('auth'))
-    
     if request.method == 'POST':
         mid = request.form.get('match_id', '').strip()
-        
         # --- SANITIZE PROOF INPUTS ---
         rid = sanitize_text(request.form.get('room_id', '').strip())
         r_pass = sanitize_text(request.form.get('room_pass', '').strip())
-        
         file = request.files.get('proof_image')
-        
         match = get_db(f'matches/{mid}')
         if not match:
             flash("❌ Invalid Match ID.", "danger"); return redirect(url_for('upload_proof'))
@@ -653,7 +613,7 @@ def upload_proof():
     return render_template('uploadproof.html')
 
 @app.route('/uid_lookup')
-@limiter.limit("20 per hour")
+@limiter.limit("12 per hour")
 def uid_lookup():
     uid = request.args.get('uid'); result = None
     if uid:
@@ -666,8 +626,6 @@ def uid_lookup():
 @app.route('/leaderboard')
 def leaderboard():
     users = get_db('users') or {}
-    
-    # Safe Handling for List vs Dict
     if isinstance(users, list):
          users = {str(k): v for k, v in enumerate(users) if v is not None}
          
@@ -694,3 +652,4 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
