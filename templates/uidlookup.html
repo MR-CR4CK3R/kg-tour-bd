@@ -12,18 +12,19 @@
     {% if result %}
     <div class="card bg-dark border-secondary p-3 text-center">
         <h5 class="text-info">{{ result.AccountName }}</h5>
+
         <div class="row mt-3">
             <div class="col-4 border-end border-secondary">
                 <small class="text-white">Level</small>
-                <h6>{{ result.AccountLevel }}</h6>
+                <h6 class="text-info">{{ result.AccountLevel }}</h6>
             </div>
-             <div class="col-4 border-end border-secondary">
+            <div class="col-4 border-end border-secondary">
                 <small class="text-white">Likes</small>
-                <h6>{{ result.AccountLikes }}</h6>
+                <h6 class="text-info">{{ result.AccountLikes }}</h6>
             </div>
             <div class="col-4">
                 <small class="text-white">Region</small>
-                <h6>{{ result.AccountRegion }}</h6>
+                <h6 class="text-info">{{ result.AccountRegion }}</h6>
             </div>
         </div>
     </div>
