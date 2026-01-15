@@ -645,6 +645,10 @@ def rules_detail(rtype):
 @app.route('/support')
 def support(): return render_template('support.html')
 
+@app.route('/help')
+def help_page():
+    return render_template('help.html')
+    
 @app.errorhandler(413)
 def request_entity_too_large(error):
     flash("File too large! Max 5MB.", "danger")
@@ -652,4 +656,5 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
