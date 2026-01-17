@@ -158,55 +158,54 @@ def dashboard():
         return redirect(url_for('auth'))
     return render_template('dashboard.html', user=user)
 
+@app.route('/banned')
+def banned_hub():
+    if not is_logged_in(): return redirect(url_for('auth'))
+    return render_template('banned.html', user=current_user())
 @app.route('/auth', methods=['GET', 'POST'])
 @limiter.limit("5 per minute")
 def auth():
-    if request.headers.getlist("X-Forwarded-For"):
-        user_ip = request.headers.getlist("X-Forwarded-For")[0]
-    else:
-        user_ip = request.remote_addr
-    
+    if request.headers.getlist("X-Forwarded-For"): user_ip = request.headers.getlist("X-Forwarded-For")[0]
+    else: user_ip = request.remote_addr
     sanitized_ip = user_ip.replace('.', '_').replace(':', '_')
-    device_id = request.cookies.get('device_id')
-    if not device_id:
-        device_id = str(uuid.uuid4())
-
+    device_id = request.cookies.get('device_id') or str(uuid.uuid4())
     step = request.args.get('step', 'init')
 
     if request.method == 'POST':
         action = request.form.get('action')
         
-        # --- LOGIN ---
         if action == 'login':
             login_id = request.form.get('login_id', '').strip()
             password = request.form.get('password', '').strip()
             users = get_db('users') or {}
-            
             found_uid = None
             for uid, u in users.items():
                 if u and (str(u.get('phone')) == login_id or u.get('email') == login_id) and u.get('password') == password:
-                    found_uid = uid
-                    break
+                    found_uid = uid; break
             
             if found_uid:
-                if users[found_uid].get('is_banned'):
-                    flash("Account Banned.", "danger")
+                # --- MODIFIED LOGIN LOGIC FOR BANNED USERS ---
+                user_data = users[found_uid]
+                db.reference(f'users/{found_uid}/is_logged_in').set(True)
+                session['user_id'] = found_uid
+                session.permanent = True
+                resp = make_response()
+                
+                if user_data.get('is_banned'):
+                    flash("⚠️ Account Banned! Please Appeal.", "danger")
+                    resp.headers["Location"] = url_for('banned_hub')
                 else:
-                    db.reference(f'users/{found_uid}/is_logged_in').set(True)
-                    session['user_id'] = found_uid
-                    session.permanent = True
-                    resp = make_response(redirect(url_for('dashboard')))
-                    resp.set_cookie('device_id', device_id, max_age=315360000, secure=True, httponly=True)
-                    return resp
-            else:
-                flash("Invalid ID or Password", "danger")
+                    resp.headers["Location"] = url_for('dashboard')
+                
+                resp.status_code = 302
+                resp.set_cookie('device_id', device_id, max_age=315360000, secure=True, httponly=True)
+                return resp
+            else: flash("Invalid ID or Password", "danger")
 
-        # --- FORGOT PASSWORD ---
         elif action == 'forgot_init':
             identifier = request.form.get('identifier', '').strip()
             users = get_db('users') or {}
-            target_user = None
-            target_uid = None
+            target_user = None; target_uid = None
             for uid, u in users.items():
                 if u and (str(u.get('phone')) == identifier or u.get('email') == identifier):
                     target_user = u; target_uid = uid; break
@@ -216,45 +215,32 @@ def auth():
                 otp = generate_otp()
                 if send_email_otp(email, otp, endpoint="fpass"):
                     session['reset_data'] = {'uid': target_uid, 'otp': otp, 'otp_time': time.time(), 'attempts': 0}
-                    flash(f"OTP sent to email ending in ***{email[-4:]}", "info")
-                    return render_template('auth.html', step='forgot_verify')
+                    flash(f"OTP sent to email ending in ***{email[-4:]}", "info"); return render_template('auth.html', step='forgot_verify')
                 else: flash("Failed to send OTP via Email.", "danger")
             else: flash("User not found or Email failed.", "danger")
             return render_template('auth.html', step='forgot_init')
 
         elif action == 'forgot_verify':
-            user_otp = request.form.get('otp', '').strip()
-            new_password = request.form.get('new_password', '').strip()
+            user_otp = request.form.get('otp', '').strip(); new_password = request.form.get('new_password', '').strip()
             data = session.get('reset_data')
-
             if not data: flash("Session expired.", "danger"); return redirect(url_for('auth', step='forgot_init'))
             if time.time() - data.get('otp_time', 0) > 300: session.pop('reset_data', None); flash("OTP Expired.", "danger"); return redirect(url_for('auth', step='forgot_init'))
             if data.get('attempts', 0) >= 3: session.pop('reset_data', None); flash("Too many failed attempts.", "danger"); return redirect(url_for('auth', step='forgot_init'))
 
             if str(data['otp']) == user_otp:
-                uid = data['uid']
-                db.reference(f'users/{uid}/password').set(new_password)
-                session.pop('reset_data', None)
-                flash("Password Reset Successfully! Please Login.", "success"); return redirect(url_for('auth'))
+                db.reference(f'users/{data["uid"]}/password').set(new_password)
+                session.pop('reset_data', None); flash("Password Reset Successfully! Please Login.", "success"); return redirect(url_for('auth'))
             else:
-                data['attempts'] += 1; session['reset_data'] = data
-                flash(f"Invalid OTP. Attempts left: {3 - data['attempts']}", "danger")
+                data['attempts'] += 1; session['reset_data'] = data; flash(f"Invalid OTP. Attempts left: {3 - data['attempts']}", "danger")
                 return render_template('auth.html', step='forgot_verify')
 
-        # --- SIGNUP ---
         elif action == 'signup_init':
-            if get_db(f'used_devices/{device_id}'):
-                flash("Device Policy: Account exists.", "warning"); return render_template('auth.html', step='init')
-            existing_uid_on_ip = get_db(f'used_ips/{sanitized_ip}')
-            if existing_uid_on_ip:
-                flash("Registration blocked: IP Limit reached.", "danger"); return redirect(url_for('auth'))
-            name = sanitize_text(request.form.get('name'))
-            phone = request.form.get('phone', '').strip()
-            email = request.form.get('email', '').strip()
+            if get_db(f'used_devices/{device_id}'): flash("Device Policy: Account exists.", "warning"); return render_template('auth.html', step='init')
+            if get_db(f'used_ips/{sanitized_ip}'): flash("Registration blocked: IP Limit reached.", "danger"); return redirect(url_for('auth'))
+            name = sanitize_text(request.form.get('name')); phone = request.form.get('phone', '').strip(); email = request.form.get('email', '').strip()
             users = get_db('users') or {}
             for u in users.values():
-                if u and (str(u.get('phone')) == phone or u.get('email') == email):
-                    flash("Phone or Email already registered.", "danger"); return redirect(url_for('auth'))
+                if u and (str(u.get('phone')) == phone or u.get('email') == email): flash("Phone or Email already registered.", "danger"); return redirect(url_for('auth'))
             
             otp = generate_otp()
             if send_email_otp(email, otp, endpoint="vmail"):
@@ -265,12 +251,9 @@ def auth():
             else: flash("Failed to send OTP.", "danger")
 
         elif action == 'verify_otp':
-            if get_db(f'used_devices/{device_id}'):
-                 flash("Error: Device already registered.", "danger"); return redirect(url_for('auth'))
-            user_otp = request.form.get('otp', '').strip()
-            password = request.form.get('password')
+            if get_db(f'used_devices/{device_id}'): flash("Error: Device already registered.", "danger"); return redirect(url_for('auth'))
+            user_otp = request.form.get('otp', '').strip(); password = request.form.get('password')
             data = session.get('signup_data')
-            
             if not data: flash("Session expired.", "danger"); return redirect(url_for('auth'))
             if time.time() - data.get('otp_time', 0) > 300: session.pop('signup_data', None); flash("OTP Expired.", "danger"); return redirect(url_for('auth'))
             if data.get('attempts', 0) >= 3: session.pop('signup_data', None); flash("Too many failed attempts.", "danger"); return redirect(url_for('auth'))
@@ -287,17 +270,14 @@ def auth():
                 db.reference(f'used_devices/{device_id}').set(new_uid)
                 db.reference(f'used_ips/{sanitized_ip}').set(new_uid)
                 if bot:
-                    try: bot.send_message(OWNER_ID, f"👤 NEW USER\nName: {new_user['name']}\nUID: {new_uid}")
+                    try: bot.send_message(OWNER_ID, f"👤 NEW USER\nName: {escape_md(new_user['name'])}\nUID: `{new_uid}`", parse_mode="Markdown")
                     except: pass
-                session['user_id'] = new_uid
-                session.pop('signup_data', None)
-                resp = make_response(redirect(url_for('dashboard')))
-                return resp
+                session['user_id'] = new_uid; session.pop('signup_data', None)
+                resp = make_response(redirect(url_for('dashboard'))); return resp
             else:
-                data['attempts'] += 1; session['signup_data'] = data
-                flash(f"Invalid OTP. Attempts left: {3 - data['attempts']}", "danger")
+                data['attempts'] += 1; session['signup_data'] = data; flash(f"Invalid OTP. Attempts left: {3 - data['attempts']}", "danger")
                 return render_template('auth.html', step='verify_otp')
-    return render_template('auth.html', step=step)
+    return render_template('auth.html', step=step)    
 
 @app.route('/logout')
 def logout():
@@ -656,5 +636,6 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
 
