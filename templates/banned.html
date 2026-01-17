@@ -1,0 +1,16 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="card card-custom p-4 border-danger text-center mt-5">
+    <div class="mb-3"><i class="fas fa-ban fa-5x text-danger"></i></div>
+    <h2 class="text-danger fw-bold">ACCOUNT BANNED</h2>
+    <p class="text-white">User: <b>{{ user.name }}</b></p>
+    <div class="alert alert-dark border-secondary text-light">
+        Your account is suspended. You cannot access the dashboard.<br>
+        If this is a mistake, please appeal below.
+    </div>
+    <div class="d-grid gap-2">
+        <a href="{{ url_for('appeal') }}" class="btn btn-warning fw-bold">SUBMIT APPEAL</a>
+        <a href="{{ url_for('logout') }}" class="btn btn-outline-light">Logout</a>
+    </div>
+</div>
+{% endblock %}
