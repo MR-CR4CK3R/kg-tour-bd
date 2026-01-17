@@ -339,27 +339,23 @@ def appeal():
         # 1. Save to Database
         db.reference(f'appeals/{aid}').set(appeal_data)
         
-        # 2. Notify Telegram Admin (Direct RAM Upload)
+        # 2. Notify Telegram Admin (Without Buttons)
         if bot:
             try:
+                # ক্যাপশন তৈরি (ID, User, Category)
                 msg = (
                     f"⚖️ *NEW APPEAL SUBMITTED*\n"
                     f"🆔 Appeal ID: `{aid}`\n"
                     f"👤 User: `{user_uid}`\n"
                     f"📂 Category: *{escape_md(category)}*\n"
-                    f"📝 Note: {escape_md(description)}"
                 )
                 
-                # REPLY BUTTON (Logic for your Telegram Bot)
-                from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-                markup = InlineKeyboardMarkup()
-                markup.add(InlineKeyboardButton("✍️ Reply", callback_data=f"app_reply_{aid}"))
-
+                # সরাসরি ছবি পাঠানো (কোনো বাটন ছাড়া)
                 if has_image == 'yes' and file and allowed_file(file.filename):
                     file.seek(0)
-                    bot.send_photo(OWNER_ID, file.read(), caption=msg, parse_mode="Markdown", reply_markup=markup)
+                    bot.send_photo(OWNER_ID, file.read(), caption=msg, parse_mode="Markdown")
                 else:
-                    bot.send_message(OWNER_ID, msg, parse_mode="Markdown", reply_markup=markup)
+                    bot.send_message(OWNER_ID, msg, parse_mode="Markdown")
                     
             except Exception as e:
                 print(f"Telegram Send Error: {e}")
@@ -722,3 +718,4 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
