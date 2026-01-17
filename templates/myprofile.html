@@ -1,24 +1,56 @@
 {% extends "layout.html" %}
 {% block content %}
 <h3 class="text-center text-neon mb-4">MY PROFILE</h3>
+
 <div class="card card-custom p-3">
     <div class="list-group list-group-flush">
-        <a href="{{ url_for('edit_profile', field='name') }}" class="list-group-item bg-transparent text-white d-flex justify-content-between align-items-center">
-            <div><small class="text-white">Name</small><br>{{ user.name }}</div>
-            <i class="fas fa-chevron-right"></i>
+        
+        <div class="list-group-item bg-transparent text-white d-flex justify-content-between align-items-center border-bottom border-secondary">
+            <div>
+                <small class="text-secondary">ACCOUNT ID</small><br>
+                <span id="uidText" class="text-warning fw-bold">{{ user.userid }}</span>
+            </div>
+            <button onclick="copyToClipboard()" class="btn btn-sm btn-outline-warning">
+                <i class="fas fa-copy"></i> Copy
+            </button>
+        </div>
+
+        <a href="{{ url_for('edit_profile', field='name') }}" class="list-group-item bg-transparent text-white d-flex justify-content-between align-items-center mt-2">
+            <div><small class="text-secondary">Name</small><br>{{ user.name }}</div>
+            <i class="fas fa-chevron-right text-muted"></i>
         </a>
+
         <a href="{{ url_for('edit_profile', field='email') }}" class="list-group-item bg-transparent text-white d-flex justify-content-between align-items-center">
-            <div><small class="text-white">Email</small><br>{{ user.email }}</div>
-            <i class="fas fa-chevron-right"></i>
+            <div><small class="text-secondary">Email</small><br>{{ user.email }}</div>
+            <i class="fas fa-chevron-right text-muted"></i>
         </a>
+
         <a href="{{ url_for('edit_profile', field='phone') }}" class="list-group-item bg-transparent text-white d-flex justify-content-between align-items-center">
-            <div><small class="text-white">Phone</small><br>{{ user.phone }}</div>
-            <i class="fas fa-chevron-right"></i>
+            <div><small class="text-secondary">Phone</small><br>{{ user.phone }}</div>
+            <i class="fas fa-chevron-right text-muted"></i>
         </a>
+
         <a href="{{ url_for('edit_profile', field='password') }}" class="list-group-item bg-transparent text-white d-flex justify-content-between align-items-center">
-            <div><small class="text-white">Security</small><br>Change Password</div>
-            <i class="fas fa-key"></i>
+            <div><small class="text-secondary">Security</small><br>Change Password</div>
+            <i class="fas fa-key text-muted"></i>
         </a>
+
     </div>
 </div>
+
+<script>
+    function copyToClipboard() {
+        // ১. টেক্সট পাওয়া
+        var copyText = document.getElementById("uidText").innerText;
+
+        // ২. ক্লিপবোর্ডে কপি করা
+        navigator.clipboard.writeText(copyText).then(function() {
+            // ৩. সফল হলে অ্যালার্ট বা টোস্ট দেখানো
+            alert("✅ Account ID Copied: " + copyText);
+        }, function(err) {
+            console.error('Async: Could not copy text: ', err);
+        });
+    }
+</script>
+
 {% endblock %}
