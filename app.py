@@ -612,30 +612,76 @@ def edit_profile(field):
     if not is_logged_in(): return redirect(url_for('auth'))
     uid = session['user_id']
     ALLOWED_FIELDS = ['name', 'email', 'phone', 'password']
-    if field not in ALLOWED_FIELDS: flash("Invalid field.", "danger"); return redirect(url_for('profile'))
-    if request.method == 'POST':
-        raw_value = request.form.get('value', '').strip()
-        if field == 'name':
-            value = sanitize_text(raw_value)
-        else:
-            value = raw_value
+    
+    if field not in ALLOWED_FIELDS: 
+        flash("Invalid field.", "danger")
+        return redirect(url_for('profile'))
 
+    # --- POST REQUEST ---
+    if request.method == 'POST':
+        if field == 'email' and 'otp_code' in request.form:
+            user_otp = request.form.get('otp_code', '').strip()
+            session_data = session.get('new_email_change')
+
+            if not session_data:
+                flash("Session expired. Please try again.", "danger")
+                return redirect(url_for('edit_profile', field='email'))
+            if str(session_data['otp']) == user_otp:
+                db.reference(f'users/{uid}/email').set(session_data['email'])
+                session.pop('new_email_change', None)
+                flash("✅ Email Verified & Updated Successfully!", "success")
+                return redirect(url_for('profile'))
+            else:
+                flash("❌ Invalid OTP. Try again.", "danger")
+                return render_template('myprofile/verify_new_email.html', email=session_data['email'])
+
+        # ২. সাধারণ ডাটা আপডেট ধাপ (Initial Submit)
+        raw_value = request.form.get('value', '').strip()
+        
+        # স্যানিটাইজেশন
+        if field == 'name': value = sanitize_text(raw_value)
+        else: value = raw_value
         if field in ['email', 'phone']:
             users = get_db('users') or {}
             for other_uid, u in users.items():
                 if u and other_uid != uid and str(u.get(field)) == value:
-                    flash(f"{field} taken.", "danger"); return redirect(url_for('edit_profile', field=field))
+                    flash(f"{field} is already used by another account.", "danger")
+                    return redirect(url_for('edit_profile', field=field))
+
+        # --- SPECIAL LOGIC FOR EMAIL (Send OTP) ---
+        if field == 'email':
+            otp = generate_otp()
+            if send_email_otp(value, otp, endpoint="ecmail"):
+                session['new_email_change'] = {'email': value, 'otp': otp, 'time': time.time()}
+                flash(f"OTP sent to {value}. Please verify.", "info")
+                return render_template('myprofile/verify_new_email.html', email=value)
+            else:
+                flash("Failed to send OTP to new email. Try again.", "danger")
+                return redirect(url_for('edit_profile', field='email'))
+
+        # পাসওয়ার্ড চেঞ্জ লজিক
         if field == 'password':
             old_pass = request.form.get('old_password')
             user = current_user()
             if not user or user.get('password') != old_pass: 
-                flash("Wrong old password.", "danger"); return redirect(url_for('edit_profile', field=field))
+                flash("Wrong old password.", "danger")
+                return redirect(url_for('edit_profile', field=field))
             db.reference(f'users/{uid}/password').set(value)
-        else: 
-            db.reference(f'users/{uid}/{field}').set(value)
-        flash("Updated.", "success"); return redirect(url_for('profile'))
         
-    template_map = {'name': 'myprofile/editname.html', 'email': 'myprofile/editemail.html', 'phone': 'myprofile/editphone.html', 'password': 'myprofile/editpassword.html'}
+        # অন্যান্য ফিল্ড (Name/Phone) সরাসরি আপডেট
+        elif field != 'email': 
+            db.reference(f'users/{uid}/{field}').set(value)
+        
+        flash("Updated Successfully.", "success")
+        return redirect(url_for('profile'))
+        
+    # --- GET REQUEST (Show Forms) ---
+    template_map = {
+        'name': 'myprofile/editname.html', 
+        'email': 'myprofile/editemail.html', 
+        'phone': 'myprofile/editphone.html', 
+        'password': 'myprofile/editpassword.html'
+    }
     return render_template(template_map.get(field), user=current_user())
 
 @app.route('/upload_proof', methods=['GET', 'POST'])
@@ -718,4 +764,5 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
