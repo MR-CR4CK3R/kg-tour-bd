@@ -38,6 +38,7 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 OWNER_ID = int(os.environ.get("OWNER_ID", 7480892660))
 EMAIL_API_URL = "https://khelo-gamers.vercel.app/api/"
@@ -74,18 +75,20 @@ if not firebase_admin._apps:
 # --- HELPER FUNCTIONS ---
 
 def sanitize_text(text):
-    if not text:
-        return ""
+    if not text: return ""
     forbidden_chars = ["*", "_", "[", "`", ","]
     for char in forbidden_chars:
         text = text.replace(char, "-")
     return text
 
+def escape_md(text):
+    """Escapes special characters for Telegram Markdown."""
+    if not text: return ""
+    return str(text).replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
+
 def get_db(path):
-    try:
-        return db.reference(path).get()
-    except:
-        return None
+    try: return db.reference(path).get()
+    except: return None
 
 def is_logged_in():
     return 'user_id' in session
@@ -127,20 +130,26 @@ def send_email_otp(email, otp, endpoint="vmail"):
 def deduct_balance_atomic(user_uid, amount):
     user_ref = db.reference(f'users/{user_uid}/main_balance')
     def transaction_func(current_balance):
-        if current_balance is None:
-            return None
+        if current_balance is None: return None
         current_balance = float(current_balance)
-        if current_balance >= amount:
-            return current_balance - amount
-        else:
-            raise ValueError("Insufficient Balance")
+        if current_balance >= amount: return current_balance - amount
+        else: raise ValueError("Insufficient Balance")
     try:
         user_ref.transaction(transaction_func)
         return True
-    except firebase_admin.db.TransactionError:
+    except (firebase_admin.db.TransactionError, ValueError):
         return False
-    except ValueError:
-        return False
+
+# --- MIDDLEWARE: BANNED USER PROTECTION ---
+@app.before_request
+def restrict_banned_users():
+    if is_logged_in():
+        user = current_user()
+        # যদি ইউজার ব্যানড হয়, তবে সে শুধু এই পেজগুলোতে যেতে পারবে
+        if user and user.get('is_banned'):
+            allowed_routes = ['banned_hub', 'appeal', 'logout', 'static']
+            if request.endpoint and request.endpoint not in allowed_routes:
+                return redirect(url_for('banned_hub'))
 
 # --- ROUTES ---
 
@@ -162,6 +171,7 @@ def dashboard():
 def banned_hub():
     if not is_logged_in(): return redirect(url_for('auth'))
     return render_template('banned.html', user=current_user())
+
 @app.route('/auth', methods=['GET', 'POST'])
 @limiter.limit("5 per minute")
 def auth():
@@ -184,13 +194,13 @@ def auth():
                     found_uid = uid; break
             
             if found_uid:
-                # --- MODIFIED LOGIN LOGIC FOR BANNED USERS ---
                 user_data = users[found_uid]
                 db.reference(f'users/{found_uid}/is_logged_in').set(True)
                 session['user_id'] = found_uid
                 session.permanent = True
                 resp = make_response()
                 
+                # Check Ban Status
                 if user_data.get('is_banned'):
                     flash("⚠️ Account Banned! Please Appeal.", "danger")
                     resp.headers["Location"] = url_for('banned_hub')
@@ -286,6 +296,86 @@ def logout():
         db.reference(f'users/{uid}/is_logged_in').set(False)
     session.clear()
     return redirect(url_for('index'))
+
+# --- APPEAL SYSTEM ROUTE ---
+@app.route('/appeal', methods=['GET', 'POST'])
+@limiter.limit("10 per hour")
+def appeal():
+    if not is_logged_in(): return redirect(url_for('auth'))
+    
+    user = current_user()
+    user_uid = session['user_id']
+
+    # --- SUBMIT APPEAL ---
+    if request.method == 'POST':
+        category = request.form.get('category')
+        description = sanitize_text(request.form.get('description', '').strip())
+        
+        # Image Logic
+        has_image = request.form.get('has_image_check') # 'yes' or 'no'
+        file = request.files.get('proof_image')
+        
+        if not category or not description:
+            flash("Please fill all required fields.", "danger"); return redirect(url_for('appeal'))
+
+        # Security Check: False Ban Logic
+        if category == "False Ban" and not user.get('is_banned'):
+            flash("Invalid Category. You are not banned.", "danger"); return redirect(url_for('appeal'))
+
+        aid = str(uuid.uuid4())[:8]
+        
+        appeal_data = {
+            "id": aid,
+            "userid": user_uid,
+            "user_name": user.get('name', 'Unknown'),
+            "category": category,
+            "description": description,
+            "has_image": has_image,
+            "status": "pending", 
+            "admin_reply": "",
+            "time": str(datetime.datetime.now())
+        }
+        
+        # 1. Save to Database
+        db.reference(f'appeals/{aid}').set(appeal_data)
+        
+        # 2. Notify Telegram Admin (Direct RAM Upload)
+        if bot:
+            try:
+                msg = (
+                    f"⚖️ *NEW APPEAL SUBMITTED*\n"
+                    f"🆔 Appeal ID: `{aid}`\n"
+                    f"👤 User: `{user_uid}`\n"
+                    f"📂 Category: *{escape_md(category)}*\n"
+                    f"📝 Note: {escape_md(description)}"
+                )
+                
+                # REPLY BUTTON (Logic for your Telegram Bot)
+                from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+                markup = InlineKeyboardMarkup()
+                markup.add(InlineKeyboardButton("✍️ Reply", callback_data=f"app_reply_{aid}"))
+
+                if has_image == 'yes' and file and allowed_file(file.filename):
+                    file.seek(0)
+                    bot.send_photo(OWNER_ID, file.read(), caption=msg, parse_mode="Markdown", reply_markup=markup)
+                else:
+                    bot.send_message(OWNER_ID, msg, parse_mode="Markdown", reply_markup=markup)
+                    
+            except Exception as e:
+                print(f"Telegram Send Error: {e}")
+
+        flash("Appeal Submitted! Wait for Admin Reply.", "success")
+        return redirect(url_for('appeal'))
+
+    # --- SHOW APPEAL HISTORY ---
+    all_appeals = get_db('appeals') or {}
+    if isinstance(all_appeals, list):
+        all_appeals = {str(k): v for k, v in enumerate(all_appeals) if v is not None}
+        
+    my_appeals = [a for a in all_appeals.values() if a and str(a.get('userid')) == str(user_uid)]
+    my_appeals.sort(key=lambda x: x['time'], reverse=True)
+
+    return render_template('appeal.html', user=user, appeals=my_appeals)
 
 @app.route('/matches')
 def matches_hub():
@@ -392,7 +482,6 @@ def join_match(mid):
                 })
             participants = match.get('participants', [])
             merged = False
-            # --- RANDOM FILLING LOGIC ---
             if is_random:
                 if isinstance(participants, list):
                     for p in participants:
@@ -439,7 +528,7 @@ def deposit():
     if request.method == 'POST':
         method = sanitize_text(request.form.get('method'))
         sender = sanitize_text(request.form.get('sender'))
-        trx_id = sanitize_text(request.form.get('trx_id')) # Sanitizing Transaction ID as well
+        trx_id = sanitize_text(request.form.get('trx_id'))
         try:
             amount = float(request.form.get('amount'))
             if amount <= 0: flash("Amount must be positive.", "danger"); return redirect(url_for('deposit'))
@@ -530,7 +619,6 @@ def edit_profile(field):
     if field not in ALLOWED_FIELDS: flash("Invalid field.", "danger"); return redirect(url_for('profile'))
     if request.method == 'POST':
         raw_value = request.form.get('value', '').strip()
-        # --- SANITIZE NAME IN PROFILE EDIT ---
         if field == 'name':
             value = sanitize_text(raw_value)
         else:
@@ -554,14 +642,12 @@ def edit_profile(field):
     template_map = {'name': 'myprofile/editname.html', 'email': 'myprofile/editemail.html', 'phone': 'myprofile/editphone.html', 'password': 'myprofile/editpassword.html'}
     return render_template(template_map.get(field), user=current_user())
 
-# --- FEATURE 2: Secure Proof Upload with Password ---
 @app.route('/upload_proof', methods=['GET', 'POST'])
 @limiter.limit("5 per hour")
 def upload_proof():
     if not is_logged_in(): return redirect(url_for('auth'))
     if request.method == 'POST':
         mid = request.form.get('match_id', '').strip()
-        # --- SANITIZE PROOF INPUTS ---
         rid = sanitize_text(request.form.get('room_id', '').strip())
         r_pass = sanitize_text(request.form.get('room_pass', '').strip())
         file = request.files.get('proof_image')
@@ -582,7 +668,7 @@ def upload_proof():
         if file and allowed_file(file.filename):
             try:
                 if bot:
-                    caption = f"📸 PROOF\nUser: `{user_id}`\nMatch: `{mid}`\nRoom: `{rid}`\nPass: `{r_pass}`"
+                    caption = f"📸 PROOF\nUser: `{escape_md(user_id)}`\nMatch: `{escape_md(mid)}`\nRoom: `{escape_md(rid)}`\nPass: `{escape_md(r_pass)}`"
                     bot.send_photo(OWNER_ID, file.read(), caption=caption, parse_mode="Markdown")
                     flash("✅ Proof submitted successfully!", "success")
                 else: flash("Bot not active.", "warning")
@@ -618,7 +704,7 @@ def rules_hub(): return render_template('rules.html')
 @app.route('/rules/<rtype>')
 def rules_detail(rtype):
     rules_data = get_db('rules') or {}
-    if isinstance(rules_data, list): # Safe handling
+    if isinstance(rules_data, list): 
         rules_data = {}
     return render_template(f'rules/{rtype}rules.html', content=rules_data.get(rtype.upper(), "No rules set."))
 
@@ -636,6 +722,3 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
-
-
-
