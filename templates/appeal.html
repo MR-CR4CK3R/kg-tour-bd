@@ -14,17 +14,17 @@
                         <option value="" selected disabled>-- Select Reason --</option>
                         
                         {% if user.is_banned %}
-                        <option value="False Ban" class="text-danger fw-bold">🚫 False Ban Appeal</option>
+                            <option value="False Ban" class="text-danger fw-bold">🚫 False Ban Appeal</option>
+                        {% else %}
+                            <option value="Match Result Dispute">Match Result Dispute</option>
+                            <option value="Prize / Payment Issue">Prize / Payment Issue</option>
+                            <option value="Unfair Disqualification">Unfair Disqualification</option>
+                            <option value="Room / Match Issue">Room / Match Issue</option>
+                            <option value="Cheating Report Appeal">Cheating Report Appeal</option>
+                            <option value="Account Issue">Account Issue</option>
+                            <option value="Admin / Moderator Issue">Admin / Moderator Issue</option>
+                            <option value="Other">Other</option>
                         {% endif %}
-
-                        <option value="Match Result Dispute">Match Result Dispute</option>
-                        <option value="Prize / Payment Issue">Prize / Payment Issue</option>
-                        <option value="Unfair Disqualification">Unfair Disqualification</option>
-                        <option value="Room / Match Issue">Room / Match Issue</option>
-                        <option value="Cheating Report Appeal">Cheating Report Appeal</option>
-                        <option value="Account Issue">Account Issue</option>
-                        <option value="Admin / Moderator Issue">Admin / Moderator Issue</option>
-                        <option value="Other">Other</option>
                     </select>
                 </div>
 
