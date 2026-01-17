@@ -1,0 +1,36 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-6">
+        <div class="card card-custom p-4 border-warning">
+            <div class="text-center mb-3">
+                <i class="fas fa-envelope-open-text fa-3x text-warning"></i>
+                <h4 class="text-white mt-2">VERIFY NEW EMAIL</h4>
+                <p class="text-secondary small">
+                    We sent a verification code to:<br>
+                    <span class="text-info fw-bold">{{ email }}</span>
+                </p>
+            </div>
+
+            <form method="POST" action="{{ url_for('edit_profile', field='email') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                
+                <div class="mb-3">
+                    <label class="form-label text-white small">Enter OTP Code</label>
+                    <input type="text" name="otp_code" class="form-control bg-dark text-white border-secondary text-center letter-spacing-2" placeholder="XXXXXX" required>
+                </div>
+
+                <button type="submit" class="btn btn-warning w-100 fw-bold">
+                    VERIFY & UPDATE
+                </button>
+                
+                <div class="text-center mt-3">
+                    <a href="{{ url_for('edit_profile', field='email') }}" class="text-muted small text-decoration-none">
+                        <i class="fas fa-arrow-left"></i> Change Email Address
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
