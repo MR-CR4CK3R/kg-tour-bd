@@ -529,12 +529,13 @@ def deposit():
             amount = float(request.form.get('amount'))
             if amount <= 0: flash("Amount must be positive.", "danger"); return redirect(url_for('deposit'))
         except ValueError: flash("Invalid amount.", "danger"); return redirect(url_for('deposit'))
-        if amount < 10: flash("Minimum deposit 10.", "danger"); return redirect(url_for('deposit'))
-
+        min_dep = float(settings.get('min_dep', 50)) 
+        if amount < min_dep: 
+            flash(f"Minimum deposit {min_dep} Tk.", "danger")
+            return redirect(url_for('deposit'))
         txns = get_db('transactions') or {}
         for t in txns.values():
             if t and t.get('trx_id') == trx_id: flash("TrxID used.", "danger"); return redirect(url_for('deposit'))
-            
         tid = str(uuid.uuid4())[:8]
         data = {"id": tid, "userid": session['user_id'], "type": "deposit", "method": method, "amount": amount, "sender": sender, "trx_id": trx_id, "status": "pending", "time": str(datetime.datetime.now())}
         db.reference(f'transactions/{tid}').set(data)
@@ -764,5 +765,6 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
 
