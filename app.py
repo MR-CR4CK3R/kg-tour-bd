@@ -517,7 +517,7 @@ def join_match(mid):
 def wallet(): return render_template('wallet.html', user=current_user())
 
 @app.route('/wallet/deposit', methods=['GET', 'POST'])
-@limiter.limit("50 per hour")
+@limiter.limit("5 per hour")
 def deposit():
     if not is_logged_in(): return redirect(url_for('auth'))
     settings = get_db('settings')
@@ -765,6 +765,7 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
 
 
