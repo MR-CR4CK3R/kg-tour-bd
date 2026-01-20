@@ -41,6 +41,7 @@ def allowed_file(filename):
 
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 OWNER_ID = int(os.environ.get("OWNER_ID", 7480892660))
+GC_ID = int(os.environ.get("GC_ID", -1002321125186))
 EMAIL_API_URL = "https://khelo-gamers.vercel.app/api/"
 FIREBASE_DB_URL = "https://khelo-gamers-of-bd-default-rtdb.asia-southeast1.firebasedatabase.app/"
 bot = TeleBot(TOKEN) if TOKEN else None
@@ -540,7 +541,7 @@ def deposit():
         data = {"id": tid, "userid": session['user_id'], "type": "deposit", "method": method, "amount": amount, "sender": sender, "trx_id": trx_id, "status": "pending", "time": str(datetime.datetime.now())}
         db.reference(f'transactions/{tid}').set(data)
         if bot:
-            try: bot.send_message(OWNER_ID, f"🔔 Deposit: {amount} by {session['user_id']}")
+            try: bot.send_message(GC_ID, f"🔔 Deposit: {amount} by {session['user_id']}")
             except: pass
         flash("Deposit submitted.", "success"); return redirect(url_for('wallet'))
     return render_template('wallet/deposit.html', settings=settings)
@@ -569,7 +570,7 @@ def withdraw():
             data = {"id": tid, "userid": session['user_id'], "type": "withdraw", "method": method, "amount": amount, "number": number, "status": "pending", "time": str(datetime.datetime.now())}
             db.reference(f'transactions/{tid}').set(data)
             if bot:
-                try: bot.send_message(OWNER_ID, f"🔔 Withdraw: {amount} by {session['user_id']}")
+                try: bot.send_message(GC_ID, f"🔔 Withdraw: {amount} by {session['user_id']}")
                 except: pass
             flash("Withdraw submitted.", "success"); return redirect(url_for('wallet'))
     return render_template('wallet/withdraw.html', settings=settings, user=user)
@@ -712,7 +713,7 @@ def upload_proof():
             try:
                 if bot:
                     caption = f"📸 PROOF\nUser: `{escape_md(user_id)}`\nMatch: `{escape_md(mid)}`\nRoom: `{escape_md(rid)}`\nPass: `{escape_md(r_pass)}`"
-                    bot.send_photo(OWNER_ID, file.read(), caption=caption, parse_mode="Markdown")
+                    bot.send_photo(GC_ID, file.read(), caption=caption, parse_mode="Markdown")
                     flash("✅ Proof submitted successfully!", "success")
                 else: flash("Bot not active.", "warning")
             except Exception as e: flash(f"Error: {e}", "danger")
