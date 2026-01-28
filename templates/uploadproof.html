@@ -2,33 +2,107 @@
 {% block content %}
 <div class="card card-custom p-4">
     <h4 class="text-neon mb-3">UPLOAD PROOF</h4>
-    <p class="text-white small">Send screenshot of your match result or payment.</p>
-    
-    <form method="POST" enctype="multipart/form-data">
+
+    <div id="step1_section">
+        <div class="mb-3">
+            <label class="form-label text-white">Enter Match ID First</label>
+            <div class="input-group">
+                <input type="text" id="verify_mid" class="form-control" placeholder="e.g. 8A3F29">
+                <button class="btn btn-warning" type="button" onclick="verifyMatch()">Verify Match</button>
+            </div>
+            <small id="verify_msg" class="text-danger"></small>
+        </div>
+    </div>
+
+    <form method="POST" enctype="multipart/form-data" id="main_form" style="display:none;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        
+        <input type="hidden" name="match_id" id="final_match_id">
+
+        <div class="alert alert-success" id="match_info_msg"></div>
 
         <div class="mb-3">
-            <label class="form-label text-white">Match ID</label>
-            <input type="text" name="match_id" class="form-control" placeholder="e.g. 8A3F29" required>
-        </div>
-        
-        <div class="mb-3">
             <label class="form-label text-white">Room ID</label>
-            <input type="text" name="room_id" class="form-control" placeholder="Game Room ID" required>
+            <input type="text" name="room_id" class="form-control" required>
         </div>
 
         <div class="mb-3">
             <label class="form-label text-white">Room Password</label>
-            <input type="text" name="room_pass" class="form-control" placeholder="Game Room Password" required>
+            <input type="text" name="room_pass" class="form-control" required>
+        </div>
+
+        <div id="extra_fields" style="display:none;" class="p-3 mb-3 border border-warning rounded">
+            <h6 class="text-warning">Team Details Required</h6>
+            <div class="mb-3">
+                <label class="form-label text-white">Captain ID</label>
+                <input type="text" name="captain_id" id="captain_input" class="form-control" placeholder="Enter Game UID of Captain">
+            </div>
+            <div class="mb-3">
+                <label class="form-label text-white">Team Wipeout?</label>
+                <select name="team_wipout" id="wipeout_input" class="form-control bg-dark text-white">
+                    <option value="No">No</option>
+                    <option value="Yes">Yes</option>
+                </select>
+            </div>
         </div>
 
         <div class="mb-4">
             <label class="form-label text-white">Screenshot</label>
             <input type="file" name="proof_image" class="form-control bg-dark" accept="image/*" required>
-            <small class="text-secondary">Max size: 5MB</small>
         </div>
         
-        <button type="submit" class="btn btn-primary w-100">SEND TO ADMIN</button>
+        <button type="submit" class="btn btn-primary w-100">SUBMIT PROOF</button>
     </form>
 </div>
+
+<script>
+function verifyMatch() {
+    let mid = document.getElementById('verify_mid').value.trim();
+    let msgBox = document.getElementById('verify_msg');
+    
+    if(!mid) {
+        msgBox.innerText = "Please enter a Match ID";
+        return;
+    }
+
+    msgBox.innerText = "Checking...";
+    fetch('/api/check_match_status', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': "{{ csrf_token() }}"
+        },
+        body: JSON.stringify({match_id: mid})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if(data.status === 'success') {
+            document.getElementById('step1_section').style.display = 'none';
+            document.getElementById('main_form').style.display = 'block';
+            
+            // Set Hidden ID
+            document.getElementById('final_match_id').value = mid;
+            document.getElementById('match_info_msg').innerText = "Match Found: " + data.team_type + " Mode";
+
+            // If NOT Solo, show extra fields and make them required
+            if(data.team_type !== 'SOLO') {
+                document.getElementById('extra_fields').style.display = 'block';
+                document.getElementById('captain_input').required = true;
+                document.getElementById('wipeout_input').required = true;
+            } else {
+                document.getElementById('extra_fields').style.display = 'none';
+                document.getElementById('captain_input').required = false;
+                document.getElementById('wipeout_input').required = false;
+            }
+        } else {
+            // Error
+            msgBox.innerText = data.message;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        msgBox.innerText = "Server Error. Try again.";
+    });
+}
+</script>
 {% endblock %}
