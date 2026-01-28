@@ -745,7 +745,6 @@ def upload_proof():
                         f"🏠 Room: `{escape_md(rid)}`\n"
                         f"🔑 Pass: `{escape_md(r_pass)}`"
                     )
-ে
                     if team_type != 'SOLO':
                         caption += f"\n👮 Captain: `{escape_md(captain_id)}`"
                         caption += f"\n☠️ Wipeout: `{escape_md(team_wipout)}`"
@@ -807,6 +806,7 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
 
 
