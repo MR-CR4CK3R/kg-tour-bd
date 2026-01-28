@@ -428,7 +428,7 @@ def matches_list(m_type):
     return render_template(template_map.get(m_type, 'matches.html'), matches=filtered)
 
 @app.route('/match/join/<mid>', methods=['GET', 'POST'])
-@limiter.limit("5 per minute")
+@limiter.limit("3 per minute")
 def join_match(mid):
     if not is_logged_in(): return redirect(url_for('auth'))
     user_id = session['user_id']
@@ -547,7 +547,7 @@ def deposit():
     return render_template('wallet/deposit.html', settings=settings)
 
 @app.route('/wallet/withdraw', methods=['GET', 'POST'])
-@limiter.limit("1 per 30 minutes")
+@limiter.limit("3 per hour")
 def withdraw():
     if not is_logged_in(): return redirect(url_for('auth'))
     settings = get_db('settings')
@@ -806,6 +806,7 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
 
 
