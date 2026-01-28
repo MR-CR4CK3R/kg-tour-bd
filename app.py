@@ -701,8 +701,13 @@ def check_match_status():
 
 @app.route('/upload_proof', methods=['GET', 'POST'])
 @limiter.limit("5 per hour")
+
+
+@app.route('/upload_proof', methods=['GET', 'POST'])
+@limiter.limit("5 per hour")
 def upload_proof():
     if not is_logged_in(): return redirect(url_for('auth'))
+    
     if request.method == 'POST':
         mid = request.form.get('match_id', '').strip()
         rid = sanitize_text(request.form.get('room_id', '').strip())
@@ -710,41 +715,57 @@ def upload_proof():
         captain_id = sanitize_text(request.form.get('captain_id', '').strip())
         team_wipout = sanitize_text(request.form.get('team_wipout', '').strip())
         file = request.files.get('proof_image')
+        user_id = session['user_id']
         if session.get('temp_upload_mid') == mid:
             team_type = session.get('temp_team_type', 'SOLO')
         else:
-            val = db.reference(f'matches/{mid}/team_type').get()
-            if not val:
-                flash("❌ Invalid Match ID.", "danger"); return redirect(url_for('upload_proof'))
-            team_type = val.upper()
+            match = get_db(f'matches/{mid}')
+            if not match:
+                flash("❌ Invalid Match ID.", "danger")
+                return redirect(url_for('upload_proof'))
+            joined_data = match.get('joined', [])
+            if isinstance(joined_data, dict): joined_list = list(joined_data.values())
+            elif isinstance(joined_data, list): joined_list = joined_data
+            else: joined_list = []
+
+            if user_id not in joined_list:
+                flash("⚠️ You have NOT joined this match!", "danger")
+                return redirect(url_for('upload_proof'))
+
+            team_type = match.get('team_type', 'SOLO').upper()
+
         if team_type != 'SOLO':
             if not captain_id or not team_wipout:
-                flash(f"❌ Verification Failed! Captain ID is required for {team_type} matches.", "danger")
+                flash(f"❌ Rejected! {team_type} match requires Captain ID & Wipeout Info.", "danger")
                 return redirect(url_for('upload_proof'))
         if file and allowed_file(file.filename):
             try:
                 if bot:
                     caption = (
-                        f"📸 PROOF RECEIVED\n"
+                        f"📸 *PROOF RECEIVED*\n"
                         f"🆔 Match: `{mid}` ({team_type})\n"
-                        f"👤 Sender: `{escape_md(session['user_id'])}`\n"
+                        f"👤 Sender: `{escape_md(user_id)}`\n"
                         f"🏠 Room: `{escape_md(rid)}`\n"
                         f"🔑 Pass: `{escape_md(r_pass)}`"
                     )
+ে
                     if team_type != 'SOLO':
                         caption += f"\n👮 Captain: `{escape_md(captain_id)}`"
                         caption += f"\n☠️ Wipeout: `{escape_md(team_wipout)}`"
-
                     bot.send_photo(GC_ID, file.read(), caption=caption, parse_mode="Markdown")
+                    session.pop('temp_upload_mid', None)
+                    session.pop('temp_team_type', None)
                     flash("✅ Proof submitted successfully!", "success")
                 else: 
-                    flash("Bot not active.", "warning")
+                    flash("Bot not active, contact admin.", "warning")
             except Exception as e: 
                 flash(f"Error: {e}", "danger")
         else:
-            flash("Invalid file.", "danger")
+            flash("Invalid file type or no file selected.", "danger")
         return redirect(url_for('dashboard'))
     return render_template('uploadproof.html')
+
+
 
 @app.route('/uid_lookup')
 @limiter.limit("12 per hour")
@@ -789,6 +810,7 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
 
 
