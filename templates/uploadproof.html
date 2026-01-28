@@ -33,16 +33,16 @@
 
         <div id="extra_fields" style="display:none;" class="p-3 mb-3 border border-warning rounded">
             <h6 class="text-warning">Team Details Required</h6>
+            
             <div class="mb-3">
                 <label class="form-label text-white">Captain ID</label>
                 <input type="text" name="captain_id" id="captain_input" class="form-control" placeholder="Enter Game UID of Captain">
             </div>
+            
             <div class="mb-3">
-                <label class="form-label text-white">Team Wipeout?</label>
-                <select name="team_wipout" id="wipeout_input" class="form-control bg-dark text-white">
-                    <option value="No">No</option>
-                    <option value="Yes">Yes</option>
-                </select>
+                <label class="form-label text-white">Team Wipeout Count</label>
+                <input type="number" name="team_wipout" id="wipeout_input" class="form-control" placeholder="How many full teams eliminated? (e.g. 0, 1, 2)" min="0">
+                <small class="text-secondary">Enter 0 if none.</small>
             </div>
         </div>
 
@@ -66,6 +66,7 @@ function verifyMatch() {
     }
 
     msgBox.innerText = "Checking...";
+
     fetch('/api/check_match_status', {
         method: 'POST',
         headers: {
@@ -74,17 +75,24 @@ function verifyMatch() {
         },
         body: JSON.stringify({match_id: mid})
     })
-    .then(response => response.json())
+    .then(async response => {
+        // Handle Rate Limit (429)
+        if (response.status === 429) {
+            return { status: 'error', message: '⚠️ Too many attempts! Please wait a moment.' };
+        }
+        return response.json();
+    })
     .then(data => {
         if(data.status === 'success') {
+            // Success: Show form
             document.getElementById('step1_section').style.display = 'none';
             document.getElementById('main_form').style.display = 'block';
             
-            // Set Hidden ID
+            // Set Hidden ID & Message
             document.getElementById('final_match_id').value = mid;
             document.getElementById('match_info_msg').innerText = "Match Found: " + data.team_type + " Mode";
 
-            // If NOT Solo, show extra fields and make them required
+            // Logic: Show/Hide Captain & Wipeout fields
             if(data.team_type !== 'SOLO') {
                 document.getElementById('extra_fields').style.display = 'block';
                 document.getElementById('captain_input').required = true;
@@ -95,7 +103,7 @@ function verifyMatch() {
                 document.getElementById('wipeout_input').required = false;
             }
         } else {
-            // Error
+            // Error Message
             msgBox.innerText = data.message;
         }
     })
