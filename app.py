@@ -83,7 +83,6 @@ def sanitize_text(text):
     return text
 
 def escape_md(text):
-    """Escapes special characters for Telegram Markdown."""
     if not text: return ""
     return str(text).replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
 
@@ -140,13 +139,11 @@ def deduct_balance_atomic(user_uid, amount):
         return True
     except (firebase_admin.db.TransactionError, ValueError):
         return False
-
 # --- MIDDLEWARE: BANNED USER PROTECTION ---
 @app.before_request
 def restrict_banned_users():
     if is_logged_in():
         user = current_user()
-        # যদি ইউজার ব্যানড হয়, তবে সে শুধু এই পেজগুলোতে যেতে পারবে
         if user and user.get('is_banned'):
             allowed_routes = ['banned_hub', 'appeal', 'logout', 'static']
             if request.endpoint and request.endpoint not in allowed_routes:
@@ -303,28 +300,21 @@ def logout():
 @limiter.limit("10 per hour")
 def appeal():
     if not is_logged_in(): return redirect(url_for('auth'))
-    
     user = current_user()
     user_uid = session['user_id']
-
-    # --- SUBMIT APPEAL ---
     if request.method == 'POST':
         category = request.form.get('category')
         description = sanitize_text(request.form.get('description', '').strip())
-        
-        # Image Logic
-        has_image = request.form.get('has_image_check') # 'yes' or 'no'
+        has_image = request.form.get('has_image_check')
         file = request.files.get('proof_image')
         
         if not category or not description:
             flash("Please fill all required fields.", "danger"); return redirect(url_for('appeal'))
 
-        # Security Check: False Ban Logic
         if category == "False Ban" and not user.get('is_banned'):
             flash("Invalid Category. You are not banned.", "danger"); return redirect(url_for('appeal'))
-
         aid = str(uuid.uuid4())[:8]
-        
+
         appeal_data = {
             "id": aid,
             "userid": user_uid,
@@ -336,22 +326,15 @@ def appeal():
             "admin_reply": "",
             "time": str(datetime.datetime.now())
         }
-        
-        # 1. Save to Database
         db.reference(f'appeals/{aid}').set(appeal_data)
-        
-        # 2. Notify Telegram Admin (Without Buttons)
         if bot:
             try:
-                # ক্যাপশন তৈরি (ID, User, Category)
                 msg = (
                     f"⚖️ *NEW APPEAL SUBMITTED*\n"
                     f"🆔 Appeal ID: `{aid}`\n"
                     f"👤 User: `{user_uid}`\n"
                     f"📂 Category: *{escape_md(category)}*\n"
                 )
-                
-                # সরাসরি ছবি পাঠানো (কোনো বাটন ছাড়া)
                 if has_image == 'yes' and file and allowed_file(file.filename):
                     file.seek(0)
                     bot.send_photo(OWNER_ID, file.read(), caption=msg, parse_mode="Markdown")
@@ -671,40 +654,32 @@ def edit_profile(field):
         'password': 'myprofile/editpassword.html'
     }
     return render_template(template_map.get(field), user=current_user())
-
-
 @app.route('/api/check_match_status', methods=['POST'])
 @limiter.limit("5 per hour")
 def check_match_status():
     if not is_logged_in(): 
         return jsonify({'status': 'error', 'message': 'Please login first'})
-
     data = request.get_json()
     mid = data.get('match_id')
     user_id = session['user_id']
     match_data = db.reference(f'matches/{mid}').get()
-    
     if not match_data:
         return jsonify({'status': 'error', 'message': 'Invalid Match ID'})
     joined_data = match_data.get('joined', [])
     if isinstance(joined_data, dict): joined_list = list(joined_data.values())
     elif isinstance(joined_data, list): joined_list = joined_data
     else: joined_list = []
-
     if user_id not in joined_list:
         return jsonify({'status': 'error', 'message': 'You have NOT joined this match'})
-
     team_type = match_data.get('team_type', 'SOLO').upper()
     session['temp_upload_mid'] = mid
     session['temp_team_type'] = team_type
     return jsonify({'status': 'success', 'team_type': team_type})
 
-
 @app.route('/upload_proof', methods=['GET', 'POST'])
 @limiter.limit("5 per hour")
 def upload_proof():
     if not is_logged_in(): return redirect(url_for('auth'))
-    
     if request.method == 'POST':
         mid = request.form.get('match_id', '').strip()
         rid = sanitize_text(request.form.get('room_id', '').strip())
@@ -724,15 +699,12 @@ def upload_proof():
             if isinstance(joined_data, dict): joined_list = list(joined_data.values())
             elif isinstance(joined_data, list): joined_list = joined_data
             else: joined_list = []
-
             if user_id not in joined_list:
                 flash("⚠️ You have NOT joined this match!", "danger")
                 return redirect(url_for('upload_proof'))
-
             team_type = match.get('team_type', 'SOLO').upper()
-
         if team_type != 'SOLO':
-            if not captain_id or not team_wipout:
+            if not captain_id or team_wipout == "":
                 flash(f"❌ Rejected! {team_type} match requires Captain ID & Wipeout Info.", "danger")
                 return redirect(url_for('upload_proof'))
         if file and allowed_file(file.filename):
@@ -746,11 +718,13 @@ def upload_proof():
                         f"🔑 Pass: `{escape_md(r_pass)}`"
                     )
                     if team_type != 'SOLO':
-                        caption += f"\n👮 Captain: `{escape_md(captain_id)}`"
-                        caption += f"\n☠️ Wipeout: `{escape_md(team_wipout)}`"
+                        caption += f"\n👮 Captain: `{escape_md(captain_id)}`"যা
+                        caption += f"\n☠️ Wipeout Count: `{escape_md(team_wipout)}`"
+
                     bot.send_photo(GC_ID, file.read(), caption=caption, parse_mode="Markdown")
                     session.pop('temp_upload_mid', None)
                     session.pop('temp_team_type', None)
+                    
                     flash("✅ Proof submitted successfully!", "success")
                 else: 
                     flash("Bot not active, contact admin.", "warning")
@@ -758,7 +732,9 @@ def upload_proof():
                 flash(f"Error: {e}", "danger")
         else:
             flash("Invalid file type or no file selected.", "danger")
+
         return redirect(url_for('dashboard'))
+    
     return render_template('uploadproof.html')
 
 
@@ -806,6 +782,7 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
 
 
