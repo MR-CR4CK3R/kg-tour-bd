@@ -618,8 +618,6 @@ def edit_profile(field):
     if field not in ALLOWED_FIELDS: 
         flash("Invalid field.", "danger")
         return redirect(url_for('profile'))
-
-    # --- POST REQUEST ---
     if request.method == 'POST':
         if field == 'email' and 'otp_code' in request.form:
             user_otp = request.form.get('otp_code', '').strip()
@@ -636,11 +634,7 @@ def edit_profile(field):
             else:
                 flash("❌ Invalid OTP. Try again.", "danger")
                 return render_template('myprofile/verify_new_email.html', email=session_data['email'])
-
-        # ২. সাধারণ ডাটা আপডেট ধাপ (Initial Submit)
         raw_value = request.form.get('value', '').strip()
-        
-        # স্যানিটাইজেশন
         if field == 'name': value = sanitize_text(raw_value)
         else: value = raw_value
         if field in ['email', 'phone']:
@@ -649,8 +643,6 @@ def edit_profile(field):
                 if u and other_uid != uid and str(u.get(field)) == value:
                     flash(f"{field} is already used by another account.", "danger")
                     return redirect(url_for('edit_profile', field=field))
-
-        # --- SPECIAL LOGIC FOR EMAIL (Send OTP) ---
         if field == 'email':
             otp = generate_otp()
             if send_email_otp(value, otp, endpoint="ecmail"):
@@ -660,8 +652,6 @@ def edit_profile(field):
             else:
                 flash("Failed to send OTP to new email. Try again.", "danger")
                 return redirect(url_for('edit_profile', field='email'))
-
-        # পাসওয়ার্ড চেঞ্জ লজিক
         if field == 'password':
             old_pass = request.form.get('old_password')
             user = current_user()
@@ -669,15 +659,11 @@ def edit_profile(field):
                 flash("Wrong old password.", "danger")
                 return redirect(url_for('edit_profile', field=field))
             db.reference(f'users/{uid}/password').set(value)
-        
-        # অন্যান্য ফিল্ড (Name/Phone) সরাসরি আপডেট
         elif field != 'email': 
             db.reference(f'users/{uid}/{field}').set(value)
         
         flash("Updated Successfully.", "success")
         return redirect(url_for('profile'))
-        
-    # --- GET REQUEST (Show Forms) ---
     template_map = {
         'name': 'myprofile/editname.html', 
         'email': 'myprofile/editemail.html', 
@@ -685,6 +671,33 @@ def edit_profile(field):
         'password': 'myprofile/editpassword.html'
     }
     return render_template(template_map.get(field), user=current_user())
+
+
+@app.route('/api/check_match_status', methods=['POST'])
+def check_match_status():
+    if not is_logged_in(): 
+        return jsonify({'status': 'error', 'message': 'Please login first'})
+
+    data = request.get_json()
+    mid = data.get('match_id')
+    user_id = session['user_id']
+    match_data = db.reference(f'matches/{mid}').get()
+    
+    if not match_data:
+        return jsonify({'status': 'error', 'message': 'Invalid Match ID'})
+    joined_data = match_data.get('joined', [])
+    if isinstance(joined_data, dict): joined_list = list(joined_data.values())
+    elif isinstance(joined_data, list): joined_list = joined_data
+    else: joined_list = []
+
+    if user_id not in joined_list:
+        return jsonify({'status': 'error', 'message': 'You have NOT joined this match'})
+
+    team_type = match_data.get('team_type', 'SOLO').upper()
+    session['temp_upload_mid'] = mid
+    session['temp_team_type'] = team_type
+    return jsonify({'status': 'success', 'team_type': team_type})
+
 
 @app.route('/upload_proof', methods=['GET', 'POST'])
 @limiter.limit("5 per hour")
@@ -694,32 +707,43 @@ def upload_proof():
         mid = request.form.get('match_id', '').strip()
         rid = sanitize_text(request.form.get('room_id', '').strip())
         r_pass = sanitize_text(request.form.get('room_pass', '').strip())
+        captain_id = sanitize_text(request.form.get('captain_id', '').strip())
+        team_wipout = sanitize_text(request.form.get('team_wipout', '').strip())
         file = request.files.get('proof_image')
-        match = get_db(f'matches/{mid}')
-        if not match:
-            flash("❌ Invalid Match ID.", "danger"); return redirect(url_for('upload_proof'))
-
-        user_id = session['user_id']
-        joined_data = match.get('joined', [])
-        if isinstance(joined_data, dict): joined_list = list(joined_data.values())
-        elif isinstance(joined_data, list): joined_list = joined_data
-        else: joined_list = []
-
-        if user_id not in joined_list:
-            flash("⚠️ Security Alert: You have NOT joined this match.", "danger")
-            return redirect(url_for('upload_proof'))
-
+        if session.get('temp_upload_mid') == mid:
+            team_type = session.get('temp_team_type', 'SOLO')
+        else:
+            val = db.reference(f'matches/{mid}/team_type').get()
+            if not val:
+                flash("❌ Invalid Match ID.", "danger"); return redirect(url_for('upload_proof'))
+            team_type = val.upper()
+        if team_type != 'SOLO':
+            if not captain_id or not team_wipout:
+                flash(f"❌ Verification Failed! Captain ID is required for {team_type} matches.", "danger")
+                return redirect(url_for('upload_proof'))
         if file and allowed_file(file.filename):
             try:
                 if bot:
-                    caption = f"📸 PROOF\nUser: `{escape_md(user_id)}`\nMatch: `{escape_md(mid)}`\nRoom: `{escape_md(rid)}`\nPass: `{escape_md(r_pass)}`"
+                    caption = (
+                        f"📸 PROOF RECEIVED\n"
+                        f"🆔 Match: `{mid}` ({team_type})\n"
+                        f"👤 Sender: `{escape_md(session['user_id'])}`\n"
+                        f"🏠 Room: `{escape_md(rid)}`\n"
+                        f"🔑 Pass: `{escape_md(r_pass)}`"
+                    )
+                    if team_type != 'SOLO':
+                        caption += f"\n👮 Captain: `{escape_md(captain_id)}`"
+                        caption += f"\n☠️ Wipeout: `{escape_md(team_wipout)}`"
+
                     bot.send_photo(GC_ID, file.read(), caption=caption, parse_mode="Markdown")
                     flash("✅ Proof submitted successfully!", "success")
-                else: flash("Bot not active.", "warning")
-            except Exception as e: flash(f"Error: {e}", "danger")
-        else: flash("Invalid file type.", "danger")
+                else: 
+                    flash("Bot not active.", "warning")
+            except Exception as e: 
+                flash(f"Error: {e}", "danger")
+        else:
+            flash("Invalid file.", "danger")
         return redirect(url_for('dashboard'))
-        
     return render_template('uploadproof.html')
 
 @app.route('/uid_lookup')
@@ -738,7 +762,6 @@ def leaderboard():
     users = get_db('users') or {}
     if isinstance(users, list):
          users = {str(k): v for k, v in enumerate(users) if v is not None}
-         
     sorted_users = sorted(users.values(), key=lambda u: u.get('winning_balance', 0) if u else 0, reverse=True)
     return render_template('leaderboard.html', top_users=sorted_users[:10])
 
@@ -766,6 +789,7 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
 
 
