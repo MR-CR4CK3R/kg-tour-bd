@@ -674,6 +674,7 @@ def edit_profile(field):
 
 
 @app.route('/api/check_match_status', methods=['POST'])
+@limiter.limit("5 per hour")
 def check_match_status():
     if not is_logged_in(): 
         return jsonify({'status': 'error', 'message': 'Please login first'})
@@ -697,10 +698,6 @@ def check_match_status():
     session['temp_upload_mid'] = mid
     session['temp_team_type'] = team_type
     return jsonify({'status': 'success', 'team_type': team_type})
-
-
-@app.route('/upload_proof', methods=['GET', 'POST'])
-@limiter.limit("5 per hour")
 
 
 @app.route('/upload_proof', methods=['GET', 'POST'])
@@ -810,6 +807,7 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
 
 
