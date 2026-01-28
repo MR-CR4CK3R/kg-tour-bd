@@ -547,7 +547,7 @@ def deposit():
     return render_template('wallet/deposit.html', settings=settings)
 
 @app.route('/wallet/withdraw', methods=['GET', 'POST'])
-@limiter.limit("3 per hour")
+@limiter.limit("1 per 30 minutes")
 def withdraw():
     if not is_logged_in(): return redirect(url_for('auth'))
     settings = get_db('settings')
@@ -806,6 +806,7 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
 
 
